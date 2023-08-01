@@ -1,4 +1,3 @@
-#![feature(backtrace)]
 #![feature(box_patterns)]
 #![feature(rustc_private)]
 #![feature(try_blocks)]
@@ -12,10 +11,9 @@ extern crate rustc_hir_pretty;
 extern crate rustc_index;
 extern crate rustc_interface;
 extern crate rustc_middle;
-extern crate rustc_mir;
+// extern crate rustc_mir;
 extern crate rustc_span;
 
-#[macro_use]
 extern crate bitflags;
 
 #[macro_use]
@@ -27,21 +25,14 @@ extern crate log as log_crate;
 mod macros;
 
 mod analysis;
-pub mod context;
-pub mod graph;
-pub mod ir;
-pub mod iter;
 pub mod log;
 pub mod paths;
-pub mod prelude;
 pub mod report;
 pub mod utils;
-pub mod visitor;
 
 use rustc_middle::ty::TyCtxt;
 
-use crate::analysis::{SendSyncVarianceChecker, UnsafeDataflowChecker, UnsafeDestructorChecker};
-use crate::context::RudraCtxtOwner;
+use crate::analysis::{LifetimeChecker};
 use crate::log::Verbosity;
 use crate::report::ReportLevel;
 
@@ -54,9 +45,7 @@ pub static RUDRA_DEFAULT_ARGS: &[&str] =
 pub struct RudraConfig {
     pub verbosity: Verbosity,
     pub report_level: ReportLevel,
-    pub unsafe_destructor_enabled: bool,
-    pub send_sync_variance_enabled: bool,
-    pub unsafe_dataflow_enabled: bool,
+    pub lifetime_enabled: bool,
 }
 
 impl Default for RudraConfig {
@@ -64,9 +53,7 @@ impl Default for RudraConfig {
         RudraConfig {
             verbosity: Verbosity::Normal,
             report_level: ReportLevel::Info,
-            unsafe_destructor_enabled: false,
-            send_sync_variance_enabled: true,
-            unsafe_dataflow_enabled: true,
+            lifetime_enabled: true
         }
     }
 }
@@ -107,33 +94,11 @@ where
 
 pub fn analyze<'tcx>(tcx: TyCtxt<'tcx>, config: RudraConfig) {
     // workaround to mimic arena lifetime
-    let rcx_owner = RudraCtxtOwner::new(tcx, config.report_level);
-    let rcx = &*Box::leak(Box::new(rcx_owner));
+    let tcx = &*Box::leak(Box::new(tcx));
 
-    // shadow the variable tcx
-    #[allow(unused_variables)]
-    let tcx = ();
-
-    // Unsafe destructor analysis
-    if config.unsafe_destructor_enabled {
-        run_analysis("UnsafeDestructor", || {
-            let mut checker = UnsafeDestructorChecker::new(rcx);
-            checker.analyze();
-        })
-    }
-
-    // Send/Sync variance analysis
-    if config.send_sync_variance_enabled {
-        run_analysis("SendSyncVariance", || {
-            let checker = SendSyncVarianceChecker::new(rcx);
-            checker.analyze();
-        })
-    }
-
-    // Unsafe dataflow analysis
-    if config.unsafe_dataflow_enabled {
-        run_analysis("UnsafeDataflow", || {
-            let checker = UnsafeDataflowChecker::new(rcx);
+    if config.lifetime_enabled {
+        run_analysis("LifetimeChecker", || {
+            let checker = LifetimeChecker::new(tcx);
             checker.analyze();
         })
     }

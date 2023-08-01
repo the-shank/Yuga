@@ -5,8 +5,6 @@ use rustc_span::Symbol;
 use maplit::hashmap;
 use once_cell::sync::Lazy;
 
-use crate::analysis::UnsafeDataflowBehaviorFlag;
-
 /*
 How to find a path for unknown item:
 1. Modify tests/utility/rurda_paths_discovery.rs
@@ -70,87 +68,3 @@ impl PathSet {
         self.set.contains(target)
     }
 }
-
-/// Special path used only for path discovery
-pub static SPECIAL_PATH_DISCOVERY: Lazy<PathSet> =
-    Lazy::new(move || PathSet::new(&[&["rudra_paths_discovery", "PathsDiscovery", "discover"]]));
-
-pub static STRONG_LIFETIME_BYPASS_LIST: Lazy<PathSet> = Lazy::new(move || {
-    PathSet::new(&[
-        &PTR_READ,
-        &PTR_DIRECT_READ,
-        //
-        &INTRINSICS_COPY,
-        &INTRINSICS_COPY_NONOVERLAPPING,
-        //
-        &VEC_SET_LEN,
-        &VEC_FROM_RAW_PARTS,
-    ])
-});
-
-pub static WEAK_LIFETIME_BYPASS_LIST: Lazy<PathSet> = Lazy::new(move || {
-    PathSet::new(&[
-        &TRANSMUTE,
-        //
-        &PTR_WRITE,
-        &PTR_DIRECT_WRITE,
-        //
-        &PTR_AS_REF,
-        &PTR_AS_MUT,
-        &NON_NULL_AS_REF,
-        &NON_NULL_AS_MUT,
-        //
-        &SLICE_GET_UNCHECKED,
-        &SLICE_GET_UNCHECKED_MUT,
-        //
-        &PTR_SLICE_FROM_RAW_PARTS,
-        &PTR_SLICE_FROM_RAW_PARTS_MUT,
-        &SLICE_FROM_RAW_PARTS,
-        &SLICE_FROM_RAW_PARTS_MUT,
-    ])
-});
-
-pub static GENERIC_FN_LIST: Lazy<PathSet> =
-    Lazy::new(move || PathSet::new(&[&PTR_DROP_IN_PLACE, &PTR_DIRECT_DROP_IN_PLACE]));
-
-type PathMap = HashMap<Vec<Symbol>, UnsafeDataflowBehaviorFlag>;
-
-pub static STRONG_BYPASS_MAP: Lazy<PathMap> = Lazy::new(move || {
-    use UnsafeDataflowBehaviorFlag as BehaviorFlag;
-
-    hashmap! {
-        PTR_READ.iter().map(|p| Symbol::intern(p)).collect::<Vec<_>>() => BehaviorFlag::READ_FLOW,
-        PTR_DIRECT_READ.iter().map(|p| Symbol::intern(p)).collect::<Vec<_>>() => BehaviorFlag::READ_FLOW,
-        //
-        INTRINSICS_COPY.iter().map(|p| Symbol::intern(p)).collect::<Vec<_>>() => BehaviorFlag::COPY_FLOW,
-        INTRINSICS_COPY_NONOVERLAPPING.iter().map(|p| Symbol::intern(p)).collect::<Vec<_>>() => BehaviorFlag::COPY_FLOW,
-        //
-        VEC_SET_LEN.iter().map(|p| Symbol::intern(p)).collect::<Vec<_>>() => BehaviorFlag::VEC_SET_LEN,
-        //
-        VEC_FROM_RAW_PARTS.iter().map(|p| Symbol::intern(p)).collect::<Vec<_>>() => BehaviorFlag::VEC_FROM_RAW,
-    }
-});
-
-pub static WEAK_BYPASS_MAP: Lazy<PathMap> = Lazy::new(move || {
-    use UnsafeDataflowBehaviorFlag as BehaviorFlag;
-
-    hashmap! {
-        TRANSMUTE.iter().map(|p| Symbol::intern(p)).collect::<Vec<_>>() => BehaviorFlag::TRANSMUTE,
-        //
-        PTR_WRITE.iter().map(|p| Symbol::intern(p)).collect::<Vec<_>>() => BehaviorFlag::WRITE_FLOW,
-        PTR_DIRECT_WRITE.iter().map(|p| Symbol::intern(p)).collect::<Vec<_>>() => BehaviorFlag::WRITE_FLOW,
-        //
-        PTR_AS_REF.iter().map(|p| Symbol::intern(p)).collect::<Vec<_>>() => BehaviorFlag::PTR_AS_REF,
-        PTR_AS_MUT.iter().map(|p| Symbol::intern(p)).collect::<Vec<_>>() => BehaviorFlag::PTR_AS_REF,
-        NON_NULL_AS_REF.iter().map(|p| Symbol::intern(p)).collect::<Vec<_>>() => BehaviorFlag::PTR_AS_REF,
-        NON_NULL_AS_MUT.iter().map(|p| Symbol::intern(p)).collect::<Vec<_>>() => BehaviorFlag::PTR_AS_REF,
-        //
-        SLICE_GET_UNCHECKED.iter().map(|p| Symbol::intern(p)).collect::<Vec<_>>() => BehaviorFlag::SLICE_UNCHECKED,
-        SLICE_GET_UNCHECKED_MUT.iter().map(|p| Symbol::intern(p)).collect::<Vec<_>>() => BehaviorFlag::SLICE_UNCHECKED,
-        //
-        PTR_SLICE_FROM_RAW_PARTS.iter().map(|p| Symbol::intern(p)).collect::<Vec<_>>() => BehaviorFlag::SLICE_FROM_RAW,
-        PTR_SLICE_FROM_RAW_PARTS_MUT.iter().map(|p| Symbol::intern(p)).collect::<Vec<_>>() => BehaviorFlag::SLICE_FROM_RAW,
-        SLICE_FROM_RAW_PARTS.iter().map(|p| Symbol::intern(p)).collect::<Vec<_>>() => BehaviorFlag::SLICE_FROM_RAW,
-        SLICE_FROM_RAW_PARTS_MUT.iter().map(|p| Symbol::intern(p)).collect::<Vec<_>>() => BehaviorFlag::SLICE_FROM_RAW,
-    }
-});

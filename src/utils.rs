@@ -2,7 +2,7 @@ use std::io::Write;
 use std::rc::Rc;
 
 use rustc_middle::ty::{Instance, InstanceDef, TyCtxt};
-use rustc_mir::util::write_mir_pretty;
+use rustc_middle::mir::{write_mir_pretty};
 use rustc_span::{CharPos, Span};
 
 use termcolor::{Buffer, Color, ColorSpec, WriteColor};
@@ -227,11 +227,28 @@ impl<'tcx> ColorSpan<'tcx> {
 
 pub fn print_span<'tcx>(tcx: TyCtxt<'tcx>, span: &Span) {
     let source_map = tcx.sess.source_map();
-    eprintln!(
+    println!(
         "{}\n{}\n",
         source_map.span_to_diagnostic_string(span.clone()),
         source_map.span_to_snippet(span.clone()).unwrap()
     );
+}
+
+pub fn format_span_with_diag<'tcx>(tcx: TyCtxt<'tcx>, span: &Span) -> String {
+    let source_map = tcx.sess.source_map();
+    format!(
+        "{}\n{}\n",
+        source_map.span_to_diagnostic_string(span.clone()),
+        source_map.span_to_snippet(span.clone()).unwrap()
+    )
+}
+
+pub fn format_span<'tcx>(tcx: TyCtxt<'tcx>, span: &Span) -> String {
+    let source_map = tcx.sess.source_map();
+    format!(
+        "{}",
+        source_map.span_to_snippet(span.clone()).unwrap()
+    )
 }
 
 pub fn print_span_to_file<'tcx>(tcx: TyCtxt<'tcx>, span: &Span, output_name: &str) {

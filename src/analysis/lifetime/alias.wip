@@ -1,0 +1,370 @@
+/*
+    Experimental, WIP
+*/
+
+use std::collections::{HashMap, HashSet};
+
+use rustc_middle::mir::{Operand, Statement, StatementKind, Rvalue, VarDebugInfo, Place, Local, PlaceElem};
+use rustc_middle::mir::ProjectionElem::{Deref, Field};
+use rustc_middle::mir::{Body, TerminatorKind, Terminator};
+use rustc_middle::mir::traversal;
+
+use crate::analysis::lifetime::config::{self, Precision};
+use crate::progress_info;
+use crate::analysis::lifetime::utils::MyProjection::{self, MyDeref, MyField};
+
+// Check if second vector is a prefix of first
+fn is_prefix<T: Eq>(larger: &Vec<T>, smaller: &Vec<T>) -> bool {
+    if smaller.len() > larger.len() { return false; }
+
+    for (el1, el2) in larger.iter().zip(smaller.iter()) {
+        if el1 != el2 { return false; }
+    }
+    true
+}
+
+// If the second vector is a prefix of the first, return the portion
+// of the first vector that doesn't overlap with the second vector
+fn vec_diff<T: Eq + Copy>(larger: &Vec<T>, smaller: &Vec<T>) -> Vec<T> {
+
+    if ! is_prefix(larger, smaller) { return Vec::new(); }
+
+    larger[smaller.len() ..].to_vec()
+}
+
+pub struct AliasAnalyzer<'a, 'b:'a> {
+    body:           &'a Body<'b>,
+    points_to_map:  HashMap<(Local, Vec<usize>), HashSet<(Local, Vec<usize>)>>,
+    next_alloc:     u32,
+}
+
+impl<'a, 'b:'a> AliasAnalyzer<'a, 'b> {
+
+    pub fn new(body: &'a Body<'b>) -> Self {
+        AliasAnalyzer { body, points_to_map: HashMap::new(), next_alloc: Local::MAX_AS_U32}
+    }
+
+    pub fn reset(&mut self) {
+        self.points_to_map = HashMap::new();
+        self.next_alloc = Local::MAX_AS_U32;
+    }
+
+    // Take a set of values and deref all of them
+    fn apply_deref(&mut self, values: HashSet<(Local, Vec<usize>)>, create_new: bool) -> HashSet<(Local, Vec<usize>)> {
+
+        let mut all_derefs: HashSet<(Local, Vec<usize>)> = HashSet::new();
+
+        for &(local, fields) in values.iter() {
+            match self.points_to_map.get(&(local, fields)).cloned() {
+                Some(deref_set) => {
+                    all_derefs = all_derefs.union(&deref_set).map(|&k| k).collect();
+                },
+                None => {
+                    // What to do about wildcard field? TODO
+                    if create_new {
+                        self.points_to_map.insert((local, fields), HashSet::from([(Local::from_u32(self.next_alloc), Vec::new())]));
+                        all_derefs.insert((Local::from_u32(self.next_alloc), Vec::new()));
+                        self.next_alloc -= 1;
+                    }
+                }
+            }
+        }
+        all_derefs
+    }
+
+    // Take a set of values and apply a field access on all of them
+    fn apply_field(&mut self, values: HashSet<(Local, Vec<usize>)>, new_field: usize) -> HashSet<(Local, Vec<usize>)> {
+
+        let mut all_modified: HashSet<(Local, Vec<usize>)> = HashSet::new();
+
+        for &(local, fields) in values.iter() {
+
+            all_modified.insert((local, fields.push(new_field)));
+
+            if ! self.points_to_map.contains_key(&(local, fields.push(new_field))) {
+                self.points_to_map.insert((local, fields.push(new_field)), HashSet::from([(Local::from_u32(self.next_alloc), Vec::new())]));
+                self.next_alloc -= 1;
+            }
+        }
+        all_modified
+    }
+
+    // There could be a field access, but we don't know which field. So try all options
+    fn apply_unknown_field(&mut self, values: HashSet<(Local, Vec<usize>)>) -> HashSet<(Local, Vec<usize>)> {
+
+        let mut all_modified: HashSet<(Local, Vec<usize>)> = HashSet::new();
+
+        for &(l, f) in values.iter() {
+
+            all_modified.insert((l, f));
+
+            let mut with_fields: HashSet<(Local, Vec<usize>)> = self.points_to_map.keys()
+                                                                            .filter(|&&(a, b)| (a == l) && is_prefix(b, f))
+                                                                            .map(|&x| x)
+                                                                            .collect();
+            // Do wildcard field also. TODO.
+            all_modified = all_modified.union(&with_fields).map(|&k| k).collect();
+        }
+        all_modified
+    }
+
+    // L = R
+    fn update_for_copy(&mut self, l_values: HashSet<(Local, Vec<usize>)>, r_values: HashSet<(Local, Vec<usize>)>) {
+
+        for &(r_local, rfield_num) in r_values.iter() {
+            for &(l_local, lfield_num) in l_values.iter() {
+
+                if let Some(rpoints_set) = self.points_to_map.get(&(r_local, rfield_num)).cloned() {
+                    match self.points_to_map.get_mut(&(l_local, lfield_num)) {
+                        Some(lpoints_set) => {
+                            let union_set = lpoints_set.union(&rpoints_set).map(|&k| k).collect();
+                            self.points_to_map.remove(&(l_local, lfield_num));
+                            self.points_to_map.insert((l_local, lfield_num), union_set);
+                        },
+                        _ => {
+                            self.points_to_map.insert((l_local, lfield_num), rpoints_set);
+                        }
+                    }
+                }
+            }
+
+            if rfield_num.is_none() {
+                // If we have a.None = b.None, then connect all the respective fields of a and b.
+                // Actually this can be a.x = b.None also, because our "field depth" is only 1
+                let mut with_fields: HashSet<(Local, Vec<usize>)> = self.points_to_map.keys()
+                                                                                         .filter(|&&(a, b)| (a == r_local) && !b.is_empty())
+                                                                                         .map(|&x| x)
+                                                                                         .collect();
+                for &(l, fs) in with_fields.iter() {
+                    if r_values.contains(&(l, f)) { continue; } // We've already covered this
+                    let mut new_lvalues = l_values.clone();
+                    for &f in fs.iter() {
+                        new_lvalues = self.apply_field(new_lvalues, f);
+                    }
+                    self.update_for_copy(new_lvalues, HashSet::from([(l, fs)]));
+                }
+            }
+        }
+    }
+
+    // L = &R
+    fn update_for_ref(&mut self, l_values: HashSet<(Local, Vec<usize>)>, r_values: HashSet<(Local, Vec<usize>)>) {
+
+        for &(l_local, lfield_num) in l_values.iter() {
+            match self.points_to_map.get_mut(&(l_local, lfield_num)) {
+                Some(lpoints_set) => {
+                    let union_set = lpoints_set.union(&r_values).map(|&k| k).collect();
+                    self.points_to_map.remove(&(l_local, lfield_num));
+                    self.points_to_map.insert((l_local, lfield_num), union_set);
+                },
+                _ => {
+                    self.points_to_map.insert((l_local, lfield_num), r_values.clone());
+                }
+            }
+        }
+    }
+
+    // A place is a local and a series of projections (field or deref)
+    // Start with the local and apply all these projections one by one
+    fn decompose_place(&mut self, place: &Place) -> HashSet<(Local, Vec<usize>)> {
+
+        let mut values: HashSet<(Local, Vec<usize>)> = HashSet::from([(place.local, Vec::new())]);
+
+        for projection in place.projection.iter() {
+
+            match projection {
+                Deref => {
+                    values = self.apply_deref(values, true);
+                },
+                Field(field, ..) => {
+                    values = self.apply_field(values, field.index());
+                },
+                _ => ()
+            }
+        }
+        values
+    }
+
+    // Keep applying deref and field access until you can't go further
+    fn recursively_deref(&mut self,
+                         place:       &Place,
+                        ) -> HashSet<(Local, Vec<usize>)>
+    {
+        let mut values = self.decompose_place(place);
+
+        while true {
+            let old_values = values.clone();
+            let derefs = self.apply_deref(values.clone(), false);
+            let fields = self.apply_unknown_field(derefs.clone());
+            values = values.union(&fields).map(|&k| k).collect();
+            if values == old_values {
+                break;
+            }
+        }
+        values
+    }
+
+    pub fn check_alias(&mut self,
+                        source_local: &Local,
+                        source_proj:  &Vec<MyProjection>,
+                        target_local: &Local,
+                        target_proj:  &Vec<MyProjection>,
+                        debug:        bool)
+                -> bool
+    {
+        // The last thing MUST be a Deref
+        // assert!((source_proj.len() > 0) && (*source_proj.last().unwrap() == MyDeref), "The last projection must be a Deref");
+        // assert!((target_proj.len() > 0) && (*target_proj.last().unwrap() == MyDeref), "The last projection must be a Deref");
+
+        if debug {
+            println!("Source proj: {:?}", source_proj);
+            println!("Target proj: {:?}", target_proj);
+        }
+
+        let mut source_values: HashSet<(Local, Vec<usize>)> = HashSet::from([(*source_local, Vec::new())]);
+
+        for proj in source_proj.iter() {
+            match *proj {
+                MyDeref => {
+                    source_values = self.apply_deref(source_values, true);
+                },
+                MyField(field) => {
+                    source_values = self.apply_field(source_values, field);
+                }
+            }
+        }
+
+        if debug {
+            println!("{:?}", self.points_to_map);
+        }
+
+        for (basic_block, bb_data) in traversal::reverse_postorder(self.body) {
+
+            for statement in &(bb_data.statements) {
+
+                if let Statement{kind: StatementKind::Assign(assign), ..} = statement {
+                    let mut lplace = &assign.0;
+                    let rvalue = &assign.1;
+
+                    let l_values = self.decompose_place(lplace);
+
+                    if debug && lplace.local.index() == (0 as usize) {
+                        println!("L-values: {:?}", l_values);
+                    }
+
+                    match(rvalue) {
+                        Rvalue::Use(oper) | Rvalue::Repeat(oper, _) | Rvalue::Cast(_, oper, _) => {
+                            match(oper) {
+                                Operand::Move(rplace) | Operand::Copy(rplace) => {
+                                    let r_values = self.decompose_place(rplace);
+                                    self.update_for_copy(l_values.clone(), r_values);
+                                },
+                                _ => ()
+                            }
+                            if debug {print!("{:?} = {:?}\n", lplace, oper);}
+                        },
+                        Rvalue::CopyForDeref(rplace) => {
+                            let r_values = self.decompose_place(rplace);
+                            self.update_for_copy(l_values.clone(), r_values);
+                            if debug {print!("{:?} = {:?}\n", lplace, rplace);}
+                        },
+                        Rvalue::Ref(_, _, rplace) | Rvalue::AddressOf(_, rplace)  => {
+                            let r_values = self.decompose_place(rplace);
+                            self.update_for_ref(l_values.clone(), r_values);
+                            if debug {print!("{:?} = ref {:?}\n", lplace, rplace);}
+                        }
+                        Rvalue::BinaryOp(_, ops) | Rvalue::CheckedBinaryOp(_, ops) => {
+
+                            let (op1, op2) = &*(*ops);
+                            match(op1) {
+                                Operand::Move(rplace) | Operand::Copy(rplace) => {
+                                    let r_values = self.decompose_place(rplace);
+                                    self.update_for_copy(l_values.clone(), r_values);
+                                    if debug {print!("{:?} = {:?} op ", lplace, rplace);}
+                                },
+                                _ => ()
+                            }
+                            match(op2) {
+                                Operand::Move(rplace) | Operand::Copy(rplace) => {
+                                    let r_values = self.decompose_place(rplace);
+                                    self.update_for_copy(l_values.clone(), r_values);
+                                    if debug {print!("{:?}\n", rplace);}
+                                },
+                                _ => ()
+                            }
+                        }
+                        _ => ()
+                    }
+                    if debug {
+                        println!("{:?}", self.points_to_map);
+                    }
+                }
+            }
+
+            if let Some(Terminator{kind: TerminatorKind::Call{args, destination: lplace, ..}, ..}) = &bb_data.terminator {
+
+                if debug {println!("{:?} = fn({:?})", lplace, args);}
+
+                let mut l_values = self.decompose_place(lplace);
+                l_values = self.apply_unknown_field(l_values);
+
+                // Potential connection between all pairs of input arguments to StaticCall
+                for arg1 in args {
+                    for arg2 in args {
+                        if arg1 == arg2 {continue;}
+
+                        match(arg1) {
+                            Operand::Move(place1) | Operand::Copy(place1) => {
+                                match (arg2) {
+                                    Operand::Move(place2) | Operand::Copy(place2) => {
+
+                                        let values1 = self.recursively_deref(&place1);
+                                        let values2 = self.recursively_deref(&place2);
+                                        // A natural question is, what if value1 = &value2 inside the function?
+                                        // Well that doesn't make sense, because value2 is owned by the function
+                                        // and will be dropped when the function exits. Same for value2 = &value1
+                                        self.update_for_copy(values1, values2);
+                                    },
+                                    _ => ()
+                                }
+                            },
+                            _ => ()
+                        }
+                    }
+                }
+                // Once all the arguments have sorted themselves out,
+                // connect them all back to the returned value
+                for arg in args {
+                    match(arg) {
+                        Operand::Move(rplace) | Operand::Copy(rplace) => {
+                            // let r_values = self.decompose_place(rplace);
+                            let r_values = self.recursively_deref(&rplace);
+                            self.update_for_copy(l_values.clone(), r_values);
+                        },
+                        _ => ()
+                    }
+                }
+                if debug {
+                    println!("{:?}", self.points_to_map);
+                }
+            }
+        }
+        let mut target_values: HashSet<(Local, Vec<usize>)> = HashSet::from([(*target_local, Vec::new())]);
+
+        for proj in target_proj.iter() {
+            match *proj {
+                MyDeref => {
+                    target_values = self.apply_deref(target_values, false);
+                },
+                MyField(field) => {
+                    target_values = self.apply_field(target_values, field);
+                }
+            }
+        }
+        if debug {
+            println!("Source values: {:?}", source_values);
+            println!("Target values: {:?}", target_values);
+        }
+        source_values.iter().any(|x| target_values.contains(x))
+    }
+}
