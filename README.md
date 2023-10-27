@@ -1,6 +1,6 @@
 # Yuga: Automatically Detecting Lifetime Annotation Bugs in the Rust Language
 
-This is an anonymized code repository for our ICSE 2023 submission. It is adapted from a fork of [Rudra](https://github.com/sslab-gatech/Rudra).
+Yuga is a tool to detect lifetime annotation bugs in Rust [[ArXiv](https://arxiv.org/pdf/2310.08507.pdf)]. It is adapted from a fork of [Rudra](https://github.com/sslab-gatech/Rudra).
 
 To setup the code, clone the repository, `cd` into it, and run the following commands (tested on Mac and Ubuntu):
 ```
