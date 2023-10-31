@@ -15,16 +15,169 @@ use rustc_middle::ty::TyCtxt;
 use rustc_middle::hir::map::Map;
 use rustc_middle::mir::Body;
 
+use rustc_span::{Span, symbol::Symbol};
+
 use std::collections::HashMap;
 use std::matches;
 
-#[derive(Debug)]
-#[derive(Clone)]
-#[derive(PartialEq)]
+use crate::analysis::lifetime::process::ShortLivedType;
+use crate::utils::{print_span, format_span};
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct FieldInfo {
+    pub field_num:          usize,
+    pub field_name:         Option<String>,
+    pub type_span:          Option<Span>,
+    pub struct_decl_span:   Option<Span>,
+    pub struct_def_id:      Option<DefId>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum MyProjection {
     MyDeref,
-    MyField(usize)
+    MyField(FieldInfo)
 }
+
+pub fn get_actual_type<'a, 'b>(ty: &'a Ty<'b>, tcx: &'a TyCtxt<'b>) -> &'a Ty<'b> {
+
+    match &ty.kind {
+
+        TyKind::Path(
+            rustc_hir::QPath::Resolved(_,
+                rustc_hir::Path{
+                    res: rustc_hir::def::Res::SelfTyAlias{
+                            alias_to: impl_def_id,
+                            ..
+                         },
+                    ..
+                }
+            )
+        ) |
+        TyKind::Rptr(_,
+            rustc_hir::MutTy{
+                ty: Ty{
+                    kind: TyKind::Path(
+                            rustc_hir::QPath::Resolved(_,
+                                rustc_hir::Path{
+                                    res: rustc_hir::def::Res::SelfTyAlias{
+                                            alias_to: impl_def_id,
+                                            ..
+                                         },
+                                    ..
+                                }
+                            )
+                        ),
+                        ..
+                    },
+                ..
+            }
+        )
+        => {
+            let impl_node = tcx.hir().get_if_local(*impl_def_id);
+
+            if let Some(rustc_hir::Node::Item(
+                    rustc_hir::Item{
+                        kind: rustc_hir::ItemKind::Impl(
+                                rustc_hir::Impl{
+                                    self_ty,
+                                    ..
+                                }
+                            ),
+                        ..
+                    }
+                )) = impl_node
+            {
+                return self_ty;
+            }
+            ty
+        },
+
+        _ => ty
+    }
+}
+
+pub fn decompose_projection_as_str(proj: &Vec<MyProjection>, top_level_id_name: String) -> String {
+
+    let mut proj_str = top_level_id_name.clone();
+
+    for p in proj.iter() {
+        match p {
+            MyProjection::MyDeref => {
+                proj_str = format!("*({proj_str})");
+            },
+            MyProjection::MyField(FieldInfo{field_num, field_name, ..}) => {
+                if field_name.is_some() {
+                    proj_str.push_str(".");
+                    proj_str.push_str(&field_name.as_ref().unwrap());
+                }
+                else {
+                    proj_str.push_str(".");
+                    proj_str.push_str(&field_num.to_string());
+                }
+            }
+        }
+    }
+    proj_str
+}
+
+pub fn get_type_definition(ty: &Ty, tcx: &TyCtxt) -> Option<Span> {
+
+    if let rustc_hir::TyKind::Path(
+                rustc_hir::QPath::Resolved(_,
+                    rustc_hir::Path{
+                        res: rustc_hir::def::Res::Def(_, def_id),
+                        segments,
+                        ..
+                    }
+                )
+            ) = ty.kind
+    {
+        let node = tcx.hir().get_if_local(*def_id);
+
+        if let Some(rustc_hir::Node::Item(
+                        rustc_hir::Item{
+                            kind: rustc_hir::ItemKind::Struct(variant_data, generics),
+                            span,
+                            ..
+                        }
+                    )
+                ) = node
+        {
+            return Some(*span);
+        }
+    }
+    if let TyKind::Path(
+            rustc_hir::QPath::Resolved(_,
+                rustc_hir::Path{
+                    res: rustc_hir::def::Res::SelfTyAlias{
+                            alias_to: impl_def_id,
+                            ..
+                         },
+                    ..
+                }
+            )
+        ) = ty.kind
+    {
+        let impl_node = tcx.hir().get_if_local(*impl_def_id);
+
+        if let Some(rustc_hir::Node::Item(
+            rustc_hir::Item{
+                kind: rustc_hir::ItemKind::Impl(
+                        rustc_hir::Impl{
+                            self_ty,
+                            ..
+                        }
+                    ),
+                ..
+            }
+        )) = impl_node
+        {
+            return get_type_definition(self_ty, tcx);
+        }
+    }
+    None
+}
+
 
 pub fn is_self(ty: &Ty) -> bool {
     if let TyKind::Path(rustc_hir::QPath::Resolved(_, path)) = ty.kind {
@@ -36,15 +189,22 @@ pub fn is_self(ty: &Ty) -> bool {
 }
 
 pub fn get_first_field(proj: &Vec<MyProjection>) -> Option<usize> {
-    let mut field_num: Option<usize> = None;
+    let mut field: Option<usize> = None;
 
     for p in proj.iter() {
-        if let MyProjection::MyField(field) = p {
-            field_num = Some(*field);
+        if let MyProjection::MyField(FieldInfo{field_num, ..}) = p {
+            field = Some(*field_num);
             break;
         }
     }
-    return field_num;
+    field
+}
+
+pub fn get_name_from_param<'a>(param: &rustc_hir::Param) -> Option<Symbol> {
+    if let rustc_hir::PatKind::Binding(_, _, id_name_from_hir, _) = (param).pat.kind {
+        return Some(id_name_from_hir.name);
+    }
+    None
 }
 
 pub fn get_mir_value_from_hir_param<'a>(param: &rustc_hir::Param,
@@ -57,13 +217,13 @@ pub fn get_mir_value_from_hir_param<'a>(param: &rustc_hir::Param,
 
     let mut ret_place : Option<Place> = None;
 
-    if let rustc_hir::PatKind::Binding(_, _, id_name_from_hir, _) = (param).pat.kind {
+    if let Some(id_name_from_hir) = get_name_from_param(param) {
 
         for v in &(mir_body.var_debug_info) {
 
             let VarDebugInfo{name: var_name, value: var_info, ..} = v;
 
-            if *var_name == id_name_from_hir.name {
+            if *var_name == id_name_from_hir {
                 if let rustc_middle::mir::VarDebugInfoContents::Place(place) = var_info {
                     ret_place = Some(*place);
                 }

@@ -5,7 +5,7 @@ use rustc_hir::LifetimeName;
 pub fn arg_return_outlives( source_type:   &ShortLivedType,
                             target_type:   &ShortLivedType,
                             lifetime_bounds:    &Vec<(LifetimeName, LifetimeName)>
-                       ) -> bool {
+                       ) -> (bool, (Option<LifetimeName>, Option<LifetimeName>)) {
 
     let source_lifetimes = &source_type.lifetimes;
     let target_lifetimes = &target_type.lifetimes;
@@ -28,7 +28,7 @@ pub fn arg_return_outlives( source_type:   &ShortLivedType,
     // If there are no source lifetimes, then we own the thing
     // and we can assume it'll live forever. No violation possible.
     if src_bounding_lt.is_none() || src_bounding_lt == Some(LifetimeName::Static) {
-        return false;
+        return (false, (None, None));
     }
     let mut tgt_bounding_lt: Option<LifetimeName> = None;
     let mut first = true;
@@ -45,27 +45,27 @@ pub fn arg_return_outlives( source_type:   &ShortLivedType,
             break;
         }
     }
-    if (! src_is_raw) && (! tgt_is_raw) { return false; }
-    if (src_is_raw && (! source_type.in_struct)) || (tgt_is_raw && (! target_type.in_struct)) { return false; }
+    if (! src_is_raw) && (! tgt_is_raw) { return (false, (None, None)); }
+    if (src_is_raw && (! source_type.in_struct)) || (tgt_is_raw && (! target_type.in_struct)) { return (false, (None, None)); }
 
     // If we are returning something that is neither a borrow nor raw pointer,
     // then this is not something we care about.
     if tgt_bounding_lt.is_none() && ! tgt_is_raw {
-        return false;
+        return (false, (None, None));
     }
     if tgt_bounding_lt.is_none() || tgt_bounding_lt == Some(LifetimeName::Static) {
-        return true;
+        return (true, (src_bounding_lt, tgt_bounding_lt));
     }
     if compare_lifetimes(&src_bounding_lt.unwrap(), &tgt_bounding_lt.unwrap()) {
-        return false;
+        return (false, (None, None));
     }
     else {
         if lifetime_bounds.iter() // Source should outlive the target
             .any(|&(x, y)| compare_lifetimes(&x, &src_bounding_lt.unwrap())
                         && compare_lifetimes(&y, &tgt_bounding_lt.unwrap()))
-        { return false; }
+        { return (false, (None, None)); }
     }
-    true
+    (true, (src_bounding_lt, tgt_bounding_lt))
 }
 
 pub fn arg_return_mut ( source_type:   &ShortLivedType,

@@ -5,6 +5,8 @@ use rustc_hir::LifetimeName;
 use rustc_middle::ty::TyCtxt;
 use rustc_middle::hir::map::Map;
 
+use rustc_span::{Span, symbol::Symbol};
+
 use std::collections::HashMap;
 use std::cmp::Eq;
 use std::hash::Hash;
@@ -14,7 +16,8 @@ use crate::analysis::lifetime::utils::{
 	compare_lifetimes,
 	get_bounds_from_generics,
 	check_if_closure,
-	MyProjection::{self, MyDeref, MyField}
+	MyProjection::{self, MyDeref, MyField},
+	FieldInfo,
 };
 
 use crate::analysis::lifetime::mirfunc::MirFunc;
@@ -57,6 +60,7 @@ pub struct MyLifetime {
 #[derive(Debug, Clone)]
 pub struct ShortLivedType {
 	pub def_id: 	Option<DefId>,
+	pub type_span: 	Span,
 	pub lifetimes: 	Vec<MyLifetime>,
 	// How to reach this type from the container type? Deref, field.
 	pub projection: Vec<MyProjection>,
@@ -151,6 +155,7 @@ pub fn get_sub_types_dbg<'tcx>(	ty: 			&'tcx Ty<'tcx>,
 			// It has no def_id.
 			if arg_slice.len() == 0 {
 				types.push(ShortLivedType{	def_id: 	None,
+											type_span: 	ty.span,
 										   	lifetimes:  Vec::new(),
 										   	projection: Vec::new(),
 										   	in_struct: 	false,
@@ -163,7 +168,11 @@ pub fn get_sub_types_dbg<'tcx>(	ty: 			&'tcx Ty<'tcx>,
 				let sub_types = get_sub_types_dbg(&sub_ty, trait_bounds, tcx, known_defids.clone(), defid_remap.clone(), lifetime_remap.clone(), debug);
 				for sub_type in sub_types.iter() {
 					let mut temp = sub_type.clone();
-					temp.projection.insert(0 as usize, MyField(i as usize));
+					temp.projection.insert(0 as usize, MyField(FieldInfo{field_num: 		i as usize,
+																		 field_name: 		None,
+																		 type_span: 		None,
+																		 struct_decl_span: 	None,
+																		 struct_def_id: 	None }));
 					types.push(temp);
 				}
 			}
@@ -179,6 +188,7 @@ pub fn get_sub_types_dbg<'tcx>(	ty: 			&'tcx Ty<'tcx>,
             )
        	) => {
 			types.push(ShortLivedType{	def_id: 	None,
+										type_span: 	ty.span,
 									   	lifetimes:  Vec::new(),
 									   	projection: Vec::new(),
 									   	in_struct: 	false,
@@ -213,6 +223,7 @@ pub fn get_sub_types_dbg<'tcx>(	ty: 			&'tcx Ty<'tcx>,
 			This is an owned type, so push this def_id with no lifetime arguments
 			*/
 			types.push(ShortLivedType{	def_id: 	Some(*def_id),
+										type_span: 	ty.span,
 									   	lifetimes:  Vec::new(),
 									   	projection: Vec::new(),
 									   	in_struct: 	false,
@@ -246,6 +257,7 @@ pub fn get_sub_types_dbg<'tcx>(	ty: 			&'tcx Ty<'tcx>,
 										is_refcell: false,
 									};
 					types.push(ShortLivedType{	def_id: 	None,
+												type_span: 	ty.span,
 											   	lifetimes:  Vec::from([this_lifetime]),
 											   	projection: Vec::from([MyDeref]),
 											   	in_struct: 	false,
@@ -316,7 +328,11 @@ pub fn get_sub_types_dbg<'tcx>(	ty: 			&'tcx Ty<'tcx>,
 
 		    		for sub_type in sub_types.iter() {
 		    			let mut temp = sub_type.clone();
-		    			temp.projection.insert(0 as usize, MyField(0 as usize)); // Assume that this type is at index 0
+		    			temp.projection.insert(0 as usize, MyField(FieldInfo{field_num: 		0 as usize,
+																		 	 field_name: 		None,
+																		 	 type_span: 		None,
+																		 	 struct_decl_span: 	None,
+																		 	 struct_def_id: 	Some(*def_id) })); // Assume that this type is at index 0
 
 		    			if def_name == "RefCell" {
 							let ref_lifetime = MyLifetime{	name: 		None,
@@ -363,6 +379,7 @@ pub fn get_sub_types_dbg<'tcx>(	ty: 			&'tcx Ty<'tcx>,
 		    if let Some(rustc_hir::Node::Item(
 		                    rustc_hir::Item{
 		                        kind: rustc_hir::ItemKind::Struct(variant_data, generics),
+		                        span: struct_decl_span,
 		                        ..
 		                    }
 		                )
@@ -393,7 +410,12 @@ pub fn get_sub_types_dbg<'tcx>(	ty: 			&'tcx Ty<'tcx>,
 		    		for sub_type in sub_types.iter() {
 
 		    			let mut temp = sub_type.clone();
-		    			temp.projection.insert(0 as usize, MyField(i as usize));
+		    			let field_name: String = field.ident.name.as_str().to_string();
+		    			temp.projection.insert(0 as usize, MyField(FieldInfo{field_num: 		i as usize,
+																		 	 field_name: 		Some(field_name),
+																		 	 type_span: 		Some(field.ty.span),
+																		 	 struct_decl_span: 	Some(*struct_decl_span),
+																		 	 struct_def_id: 	Some(*def_id) }));
 		    			temp.in_struct = true;
 
 		    			let mut new_types: Vec<ShortLivedType> = Vec::from([temp.clone()]);

@@ -1,12 +1,7 @@
+vendor
+rudra_home
 target
 **/*.rs.bk
 
-unsafe-counter.csv
-
-# debug output
-stdout
-stderr
-
-# local file
-.env
-.vscode
+**/.DS_Store
+.DS_Store

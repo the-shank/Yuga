@@ -1,7 +1,3 @@
-/*
-    Experimental, WIP
-*/
-
 use std::collections::{HashMap, HashSet};
 
 use rustc_middle::mir::{Operand, Statement, StatementKind, Rvalue, VarDebugInfo, Place, Local, PlaceElem};
@@ -12,6 +8,7 @@ use rustc_middle::mir::traversal;
 use crate::analysis::lifetime::config::{self, Precision};
 use crate::progress_info;
 use crate::analysis::lifetime::utils::MyProjection::{self, MyDeref, MyField};
+use crate::analysis::lifetime::utils::FieldInfo;
 
 pub struct AliasAnalyzer<'a, 'b:'a> {
     body:           &'a Body<'b>,
@@ -223,8 +220,8 @@ impl<'a, 'b:'a> AliasAnalyzer<'a, 'b> {
                 MyDeref => {
                     source_values = self.apply_deref(source_values, true);
                 },
-                MyField(field) => {
-                    source_values = self.apply_field(source_values, field);
+                MyField(FieldInfo{field_num, ..}) => {
+                    source_values = self.apply_field(source_values, field_num);
                 }
             }
         }
@@ -351,8 +348,8 @@ impl<'a, 'b:'a> AliasAnalyzer<'a, 'b> {
                 MyDeref => {
                     target_values = self.apply_deref(target_values, false);
                 },
-                MyField(field) => {
-                    target_values = self.apply_field(target_values, field);
+                MyField(FieldInfo{field_num, ..}) => {
+                    target_values = self.apply_field(target_values, field_num);
                 }
             }
         }

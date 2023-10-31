@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Yuga</title>
+	<link rel="stylesheet" type="text/css" href="styles.css?v=<?php echo time(); ?>">
+	<script>
+        function fillTextBoxes(demo_num) {
+        	if (demo_num == 1) {
+            	document.getElementById("url").value = "https://github.com/jeromefroe/lru-rs/";
+            	document.getElementById("hash").value = "09f68c63755b35f9cf5cb5d6765cf8dc080f9ea3";
+            	document.getElementById("path").value = "";
+            }
+            else if (demo_num == 2) {
+            	document.getElementById("url").value = "https://github.com/jnqnfe/pulse-binding-rust";
+            	document.getElementById("hash").value = "b6b1010847c1eb2d3a533820c8ff5cdbf9993d9e";
+            	document.getElementById("path").value = "pulse-binding";
+            }
+            else if (demo_num == 3) {
+            	document.getElementById("url").value = "https://github.com/rusqlite/rusqlite/";
+            	document.getElementById("hash").value = "d70fbac2314333ecf2e67db43dbb43b0a47a4797";
+            	document.getElementById("path").value = "";
+            }
+        }
+    </script>
+</head>
+<body>
+    <h1>Yuga - Automatically Detecting Lifetime Annotation Bugs in the Rust Language</h1>
+    <h4> Either select one of the following example prompts and click Submit...</h4>
+    <div>
+        <a href="javascript:void(0);" onclick="fillTextBoxes('1')">Example 1</a>
+        <a href="javascript:void(0);" onclick="fillTextBoxes('2')">Example 2</a>
+        <a href="javascript:void(0);" onclick="fillTextBoxes('3')">Example 3</a>
+    </div>
+    <h4> ...or try any other project from GitHub</h4>
+    <form id="myForm">
+        <div class="form-group">
+            <label for="url">Enter the URL of a GitHub repository:</label>
+            <input type="text" id="url" name="url">
+        </div>
+        <div class="form-group">
+            <label for="hash">(Optional) Enter the hash of a particular commit:</label>
+            <input type="text" id="hash" name="hash">
+        </div>
+        <div class="form-group">
+            <label for="path">(Optional) Enter a relative path within the repo:</label>
+            <input type="text" id="path" name="path">
+        </div>
+        <input type="submit" value="Submit">
+    </form>
+    <br>
+    <div class="container">
+    	<div class="column" id="left-column">
+    	    <h3>Console Output</h3>
+    		<div id="console_output" class="fixed-height"></div>
+    	</div>
+    	<div class="column" id="right-column">
+		    <h3>Reports</h3>
+		    <div id="report_names">
+		        <select id="reportNamesDropdown">
+		        	<!-- <option value="">-------Select-------</option> -->
+		        </select>
+		    </div>
+		    <iframe id="embeddedFrame"></iframe>
+    	</div>
+    </div>
+
+    <script>
+		document.getElementById("myForm").addEventListener("submit", function (event) {
+		    event.preventDefault(); // Prevent the default form submission
+
+		    // Get the input value
+		    var url  = document.getElementById("url").value;
+		    var hash = document.getElementById("hash").value;
+		    var path = document.getElementById("path").value;
+
+		    var params = "url="+url+"&hash="+hash+"&subdir="+path;
+
+			var selectElement = document.getElementById("reportNamesDropdown");
+			var iframeElement = document.getElementById("embeddedFrame");
+
+		    function resetDropdown() {
+		    	document.getElementById("reportNamesDropdown").innerHTML = "";
+		    	// var option = document.createElement("option");
+		    	// option.text = "-------Select-------";
+		    	// selectElement.add(option);
+		    }
+
+		    document.getElementById("console_output").innerHTML = "";
+		    document.getElementById("embeddedFrame").src = "";
+		    resetDropdown();
+
+			// Function to populate the dropdown
+			function populateDropdown(fileNames) {
+			    for (var i = 0; i < fileNames.length; i++) {
+			        if (fileNames[i].split("/").length > 1) {
+				        var option = document.createElement("option");
+				        var shortened = fileNames[i].split("/")[1].split(".")[0];
+				        option.text = shortened;
+				        option.value = fileNames[i];
+				        selectElement.add(option);
+				    }
+			    }
+			    iframeElement.src = fileNames[0];
+			}
+
+			// Function to handle the iframe when a selection is made
+			function loadFileInIframe() {
+			    var selectedIndex = selectElement.selectedIndex;
+			    if (selectedIndex !== -1) {
+			        iframeElement.src = this.value;
+			    }
+			}
+
+			// // Add an event listener to the dropdown to load the selected file in the iframe
+			selectElement.addEventListener("change", loadFileInIframe);
+
+		    // Send the input value to the server using an AJAX request
+		    var xhr = new XMLHttpRequest();
+		    xhr.open("POST", "process_input.php", true);
+		    xhr.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
+		    xhr.onreadystatechange = function () {
+		    	var outputs = xhr.responseText.split("__reports__");
+				document.getElementById("console_output").innerHTML = outputs[0];
+				if (outputs.length > 1) {
+					var fileNames = outputs[1].split("\n");
+					populateDropdown(fileNames);
+				}
+		    };
+		    xhr.send(params);
+		});
+	</script>
+</body>
+</html>
