@@ -8,7 +8,7 @@ use once_cell::sync::Lazy;
 /*
 How to find a path for unknown item:
 1. Modify tests/utility/rurda_paths_discovery.rs
-2. cargo run --bin rudra -- --crate-type lib tests/utility/rudra_paths_discovery.rs
+2. cargo run --bin yuga -- --crate-type lib tests/utility/yuga_paths_discovery.rs
 
 For temporary debugging, you can also change this line in `prelude.rs`
 `let names = self.get_def_path(def_id);`

@@ -36,21 +36,21 @@ use crate::analysis::{LifetimeChecker};
 use crate::log::Verbosity;
 use crate::report::ReportLevel;
 
-// Insert rustc arguments at the beginning of the argument list that Rudra wants to be
+// Insert rustc arguments at the beginning of the argument list that Yuga wants to be
 // set per default, for maximal validation power.
-pub static RUDRA_DEFAULT_ARGS: &[&str] =
-    &["-Zalways-encode-mir", "-Zmir-opt-level=0", "--cfg=rudra"];
+pub static YUGA_DEFAULT_ARGS: &[&str] =
+    &["-Zalways-encode-mir", "-Zmir-opt-level=0", "--cfg=yuga"];
 
 #[derive(Debug, Clone, Copy)]
-pub struct RudraConfig {
+pub struct YugaConfig {
     pub verbosity: Verbosity,
     pub report_level: ReportLevel,
     pub lifetime_enabled: bool,
 }
 
-impl Default for RudraConfig {
+impl Default for YugaConfig {
     fn default() -> Self {
-        RudraConfig {
+        YugaConfig {
             verbosity: Verbosity::Normal,
             report_level: ReportLevel::Info,
             lifetime_enabled: true
@@ -58,7 +58,7 @@ impl Default for RudraConfig {
     }
 }
 
-/// Returns the "default sysroot" that Rudra will use if no `--sysroot` flag is set.
+/// Returns the "default sysroot" that Yuga will use if no `--sysroot` flag is set.
 /// Should be a compile-time constant.
 pub fn compile_time_sysroot() -> Option<String> {
     // option_env! is replaced to a constant at compile time
@@ -77,7 +77,7 @@ pub fn compile_time_sysroot() -> Option<String> {
     Some(match (home, toolchain) {
         (Some(home), Some(toolchain)) => format!("{}/toolchains/{}", home, toolchain),
         _ => option_env!("RUST_SYSROOT")
-            .expect("To build Rudra without rustup, set the `RUST_SYSROOT` env var at build time")
+            .expect("To build Yuga without rustup, set the `RUST_SYSROOT` env var at build time")
             .to_owned(),
     })
 }
@@ -92,7 +92,7 @@ where
     result
 }
 
-pub fn analyze<'tcx>(tcx: TyCtxt<'tcx>, config: RudraConfig) {
+pub fn analyze<'tcx>(tcx: TyCtxt<'tcx>, config: YugaConfig) {
     // workaround to mimic arena lifetime
     let tcx = &*Box::leak(Box::new(tcx));
 

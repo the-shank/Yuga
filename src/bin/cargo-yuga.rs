@@ -15,22 +15,22 @@ use rustc_version::VersionMeta;
 
 use wait_timeout::ChildExt;
 
-use rudra::log::{self, Verbosity};
-use rudra::{progress_error, progress_info};
+use yuga::log::{self, Verbosity};
+use yuga::{progress_error, progress_info};
 
-const CARGO_RUDRA_HELP: &str = r#"Tests crates with Rudra
+const CARGO_YUGA_HELP: &str = r#"Tests crates with Yuga
 Usage:
-    cargo rudra [<cargo options>] [--] [<rustc/rudra options>...]
+    cargo yuga [<cargo options>] [--] [<rustc/yuga options>...]
 
 Common options:
     -h, --help               Print this message
 
 Other [options] are the same as `cargo check`. Everything after the first "--" is
-passed verbatim to Rudra.
+passed verbatim to Yuga.
 "#;
 
 fn show_help() {
-    println!("{}", CARGO_RUDRA_HELP);
+    println!("{}", CARGO_YUGA_HELP);
 }
 
 fn show_error(msg: impl AsRef<str>) -> ! {
@@ -115,8 +115,8 @@ fn get_first_arg_with_rs_suffix() -> Option<String> {
 }
 
 fn version_info() -> VersionMeta {
-    VersionMeta::for_command(Command::new(find_rudra()))
-        .expect("failed to determine underlying rustc version of Rudra")
+    VersionMeta::for_command(Command::new(find_yuga()))
+        .expect("failed to determine underlying rustc version of Yuga")
 }
 
 fn cargo_package() -> cargo_metadata::Package {
@@ -153,22 +153,22 @@ fn cargo_package() -> cargo_metadata::Package {
             }
         })
         .unwrap_or_else(|| {
-            show_error("This seems to be a workspace, which is not supported by cargo-rudra");
+            show_error("This seems to be a workspace, which is not supported by cargo-yuga");
         });
 
     metadata.packages.remove(package_index)
 }
 
-/// Returns the path to the `rudra` binary
-fn find_rudra() -> PathBuf {
+/// Returns the path to the `yuga` binary
+fn find_yuga() -> PathBuf {
     let mut path = std::env::current_exe().expect("current executable path invalid");
-    path.set_file_name("rudra");
+    path.set_file_name("yuga");
     path
 }
 
-/// Make sure that the `rudra` and `rustc` binary are from the same sysroot.
-/// This can be violated e.g. when rudra is locally built and installed with a different
-/// toolchain than what is used when `cargo rudra` is run.
+/// Make sure that the `yuga` and `rustc` binary are from the same sysroot.
+/// This can be violated e.g. when yuga is locally built and installed with a different
+/// toolchain than what is used when `cargo yuga` is run.
 fn test_sysroot_consistency() {
     fn get_sysroot(mut cmd: Command) -> PathBuf {
         let out = cmd
@@ -191,16 +191,16 @@ fn test_sysroot_consistency() {
     }
 
     let rustc_sysroot = get_sysroot(Command::new("rustc"));
-    let rudra_sysroot = get_sysroot(Command::new(find_rudra()));
+    let yuga_sysroot = get_sysroot(Command::new(find_yuga()));
 
-    if rustc_sysroot != rudra_sysroot {
+    if rustc_sysroot != yuga_sysroot {
         show_error(format!(
-            "rudra was built for a different sysroot than the rustc in your current toolchain.\n\
-             Make sure you use the same toolchain to run rudra that you used to build it!\n\
+            "yuga was built for a different sysroot than the rustc in your current toolchain.\n\
+             Make sure you use the same toolchain to run yuga that you used to build it!\n\
              rustc sysroot: `{}`\n\
-             rudra sysroot: `{}`",
+             yuga sysroot: `{}`",
             rustc_sysroot.display(),
-            rudra_sysroot.display()
+            yuga_sysroot.display()
         ));
     }
 }
@@ -227,28 +227,28 @@ fn clean_package(package_name: &str) {
 }
 
 fn main() {
-    // Check for version and help flags even when invoked as `cargo-rudra`.
+    // Check for version and help flags even when invoked as `cargo-yuga`.
     if std::env::args().any(|a| a == "--help" || a == "-h") {
         show_help();
         return;
     }
 
-    log::setup_logging(Verbosity::Normal).expect("Rudra failed to initialize");
+    log::setup_logging(Verbosity::Normal).expect("Yuga failed to initialize");
 
-    if let Some("rudra") = std::env::args().nth(1).as_ref().map(AsRef::as_ref) {
-        progress_info!("Running cargo rudra");
-        // This arm is for when `cargo rudra` is called. We call `cargo rustc` for each applicable target,
-        // but with the `RUSTC` env var set to the `cargo-rudra` binary so that we come back in the other branch,
-        // and dispatch the invocations to `rustc` and `rudra`, respectively.
-        in_cargo_rudra();
-        progress_info!("cargo rudra finished");
+    if let Some("yuga") = std::env::args().nth(1).as_ref().map(AsRef::as_ref) {
+        progress_info!("Running cargo yuga");
+        // This arm is for when `cargo yuga` is called. We call `cargo rustc` for each applicable target,
+        // but with the `RUSTC` env var set to the `cargo-yuga` binary so that we come back in the other branch,
+        // and dispatch the invocations to `rustc` and `yuga`, respectively.
+        in_cargo_yuga();
+        progress_info!("cargo yuga finished");
     } else if let Some("rustc") = std::env::args().nth(1).as_ref().map(AsRef::as_ref) {
-        // This arm is executed when `cargo-rudra` runs `cargo rustc` with the `RUSTC_WRAPPER` env var set to itself:
-        // dependencies get dispatched to `rustc`, the final test/binary to `rudra`.
+        // This arm is executed when `cargo-yuga` runs `cargo rustc` with the `RUSTC_WRAPPER` env var set to itself:
+        // dependencies get dispatched to `rustc`, the final test/binary to `yuga`.
         inside_cargo_rustc();
     } else {
         show_error(
-            "`cargo-rudra` must be called with either `rudra` or `rustc` as first argument.",
+            "`cargo-yuga` must be called with either `yuga` or `rustc` as first argument.",
         );
     }
 }
@@ -292,7 +292,7 @@ impl Display for TargetKind {
     }
 }
 
-fn in_cargo_rudra() {
+fn in_cargo_yuga() {
     let verbose = has_arg_flag("-v");
 
     // Some basic sanity checks
@@ -306,19 +306,19 @@ fn in_cargo_rudra() {
     targets.sort_by_key(|target| TargetKind::from(target) as u8);
 
     for target in targets {
-        // Skip `cargo rudra`
+        // Skip `cargo yuga`
         let mut args = std::env::args().skip(2);
         let kind = TargetKind::from(&target);
 
         // Now we run `cargo check $FLAGS $ARGS`, giving the user the
         // change to add additional arguments. `FLAGS` is set to identify
-        // this target. The user gets to control what gets actually passed to Rudra.
+        // this target. The user gets to control what gets actually passed to Yuga.
         let mut cmd = Command::new("cargo");
         cmd.arg("check");
 
         // Allow an option to use `xargo check` instead of `cargo`, this is used
         // for analyzing the rust standard library.
-        if std::env::var_os("RUDRA_USE_XARGO_INSTEAD_OF_CARGO").is_some() {
+        if std::env::var_os("YUGA_USE_XARGO_INSTEAD_OF_CARGO").is_some() {
             cmd = Command::new("xargo-check");
         }
 
@@ -364,10 +364,10 @@ fn in_cargo_rudra() {
             cmd.arg(version_info().host);
         }
 
-        // Add suffix to RUDRA_REPORT_PATH
-        if let Ok(report) = env::var("RUDRA_REPORT_PATH") {
+        // Add suffix to YUGA_REPORT_PATH
+        if let Ok(report) = env::var("YUGA_REPORT_PATH") {
             cmd.env(
-                "RUDRA_REPORT_PATH",
+                "YUGA_REPORT_PATH",
                 format!("{}-{}-{}", report, kind, &target.name),
             );
         }
@@ -379,7 +379,7 @@ fn in_cargo_rudra() {
         // these arguments.
         let args_vec: Vec<String> = args.collect();
         cmd.env(
-            "RUDRA_ARGS",
+            "YUGA_ARGS",
             serde_json::to_string(&args_vec).expect("failed to serialize args"),
         );
 
@@ -387,17 +387,17 @@ fn in_cargo_rudra() {
         // i.e., the first argument is `rustc` -- which is what we use in `main` to distinguish
         // the two codepaths.
         if env::var_os("RUSTC_WRAPPER").is_some() {
-            println!("WARNING: Ignoring existing `RUSTC_WRAPPER` environment variable, Rudra does not support wrapping.");
+            println!("WARNING: Ignoring existing `RUSTC_WRAPPER` environment variable, Yuga does not support wrapping.");
         }
 
         let path = std::env::current_exe().expect("current executable path invalid");
         cmd.env("RUSTC_WRAPPER", path);
         if verbose {
-            cmd.env("RUDRA_VERBOSE", ""); // this makes `inside_cargo_rustc` verbose.
+            cmd.env("YUGA_VERBOSE", ""); // this makes `inside_cargo_rustc` verbose.
             eprintln!("+ {:?}", cmd);
         }
 
-        progress_info!("Running rudra for target {}:{}", kind, &target.name);
+        progress_info!("Running yuga for target {}:{}", kind, &target.name);
         let mut child = cmd.spawn().expect("could not run cargo check");
         // 1 hour timeout
         match child
@@ -423,12 +423,12 @@ fn inside_cargo_rustc() {
     /// the "target" architecture, in contrast to the "host" architecture.
     /// Host crates are for build scripts and proc macros and still need to
     /// be built like normal; target crates need to be built for or interpreted
-    /// by Rudra.
+    /// by Yuga.
     ///
     /// Currently, we detect this by checking for "--target=", which is
     /// never set for host crates. This matches what rustc bootstrap does,
     /// which hopefully makes it "reliable enough". This relies on us always
-    /// invoking cargo itself with `--target`, which `in_cargo_rudra` ensures.
+    /// invoking cargo itself with `--target`, which `in_cargo_yuga` ensures.
     fn contains_target_flag() -> bool {
         get_arg_flag_value("--target").is_some()
     }
@@ -453,7 +453,7 @@ fn inside_cargo_rustc() {
 
     fn run_command(mut cmd: Command) {
         // Run it.
-        let verbose = std::env::var_os("RUDRA_VERBOSE").is_some();
+        let verbose = std::env::var_os("YUGA_VERBOSE").is_some();
         if verbose {
             eprintln!("+ {:?}", cmd);
         }
@@ -468,17 +468,17 @@ fn inside_cargo_rustc() {
         }
     }
 
-    // TODO: Miri sets custom sysroot here, check if it is needed for us (RUDRA-30)
+    // TODO: Miri sets custom sysroot here, check if it is needed for us (YUGA-30)
 
     let is_direct_target = contains_target_flag() && is_target_crate();
     let mut is_additional_target = false;
 
-    // Perform analysis if the crate being compiled is in the RUDRA_ALSO_ANALYZE
+    // Perform analysis if the crate being compiled is in the YUGA_ALSO_ANALYZE
     // environment variable.
-    if let (Ok(cargo_pkg_name), Ok(rudra_also_analyze_crates)) =
-        (env::var("CARGO_PKG_NAME"), env::var("RUDRA_ALSO_ANALYZE"))
+    if let (Ok(cargo_pkg_name), Ok(yuga_also_analyze_crates)) =
+        (env::var("CARGO_PKG_NAME"), env::var("YUGA_ALSO_ANALYZE"))
     {
-        if rudra_also_analyze_crates
+        if yuga_also_analyze_crates
             .split(',')
             .any(|x| x.to_lowercase() == cargo_pkg_name.to_lowercase())
         {
@@ -487,12 +487,12 @@ fn inside_cargo_rustc() {
     }
 
     if is_direct_target || is_additional_target {
-        let mut cmd = Command::new(find_rudra());
-        cmd.args(std::env::args().skip(2)); // skip `cargo-rudra rustc`
+        let mut cmd = Command::new(find_yuga());
+        cmd.args(std::env::args().skip(2)); // skip `cargo-yuga rustc`
 
-        if let Ok(report) = env::var("RUDRA_REPORT_PATH") {
+        if let Ok(report) = env::var("YUGA_REPORT_PATH") {
             cmd.env(
-                "RUDRA_REPORT_PATH",
+                "YUGA_REPORT_PATH",
                 format!(
                     "{}-{}",
                     report,
@@ -501,34 +501,34 @@ fn inside_cargo_rustc() {
             );
         }
 
-        // This is the local crate that we want to analyze with Rudra.
+        // This is the local crate that we want to analyze with Yuga.
         // (Testing `target_crate` is needed to exclude build scripts.)
-        // We deserialize the arguments that are meant for Rudra from the special
-        // environment variable "RUDRA_ARGS", and feed them to the 'rudra' binary.
+        // We deserialize the arguments that are meant for Yuga from the special
+        // environment variable "YUGA_ARGS", and feed them to the 'yuga' binary.
         //
         // `env::var` is okay here, well-formed JSON is always UTF-8.
-        let magic = std::env::var("RUDRA_ARGS").expect("missing RUDRA_ARGS");
-        let rudra_args: Vec<String> =
-            serde_json::from_str(&magic).expect("failed to deserialize RUDRA_ARGS");
-        cmd.args(rudra_args);
+        let magic = std::env::var("YUGA_ARGS").expect("missing YUGA_ARGS");
+        let yuga_args: Vec<String> =
+            serde_json::from_str(&magic).expect("failed to deserialize YUGA_ARGS");
+        cmd.args(yuga_args);
 
         run_command(cmd);
     }
 
-    // Rudra does not build anything.
+    // Yuga does not build anything.
     // We need to run rustc (or sccache) to build dependencies.
     if !is_direct_target || is_crate_type_lib() {
         let cmd = match which::which("sccache") {
             Ok(sccache_path) => {
                 let mut cmd = Command::new(&sccache_path);
-                // ["cargo-rudra", "rustc", ...]
+                // ["cargo-yuga", "rustc", ...]
                 cmd.args(std::env::args().skip(1));
                 cmd
             }
             Err(_) => {
                 // sccache was not found, use vanilla rustc
                 let mut cmd = Command::new("rustc");
-                // ["cargo-rudra", "rustc", ...]
+                // ["cargo-yuga", "rustc", ...]
                 cmd.args(std::env::args().skip(2));
                 cmd
             }

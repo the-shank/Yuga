@@ -58,18 +58,18 @@ RUN set -eux; \
     chmod -R a+x $SCCACHE_DIR; \
     rm -rf ${filename} ${dirname};
 
-# Install Rudra
+# Install Yuga
 COPY rust-toolchain.toml /tmp/rust-toolchain.toml
 # COPY crawl /tmp/crawl
 # RUN set -eux; \
-#    cargo install --locked --path /tmp/crawl --bin rudra-runner --bin unsafe-counter; \
+#    cargo install --locked --path /tmp/crawl --bin yuga-runner --bin unsafe-counter; \
 #    rm -rf /tmp/rust-toolchain.toml /tmp/crawl;
 
-COPY . /tmp/rudra/
+COPY . /tmp/yuga/
 RUN set -eux; \
-    cd /tmp/rudra; \
+    cd /tmp/yuga; \
     ./install-release.sh; \
-    rm -rf /tmp/rudra/;
+    rm -rf /tmp/yuga/;
 
 RUN chmod -R a+w $CARGO_HOME;
 

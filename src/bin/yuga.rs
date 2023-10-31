@@ -13,21 +13,21 @@ use std::env;
 use rustc_driver::Compilation;
 use rustc_interface::{interface::Compiler, Queries};
 
-use rudra::log::Verbosity;
-use rudra::report::{default_report_logger, init_report_logger, ReportLevel};
-use rudra::{analyze, compile_time_sysroot, progress_info, RudraConfig, RUDRA_DEFAULT_ARGS};
+use yuga::log::Verbosity;
+use yuga::report::{default_report_logger, init_report_logger, ReportLevel};
+use yuga::{analyze, compile_time_sysroot, progress_info, YugaConfig, YUGA_DEFAULT_ARGS};
 
-struct RudraCompilerCalls {
-    config: RudraConfig,
+struct YugaCompilerCalls {
+    config: YugaConfig,
 }
 
-impl RudraCompilerCalls {
-    fn new(config: RudraConfig) -> RudraCompilerCalls {
-        RudraCompilerCalls { config }
+impl YugaCompilerCalls {
+    fn new(config: YugaConfig) -> YugaCompilerCalls {
+        YugaCompilerCalls { config }
     }
 }
 
-impl rustc_driver::Callbacks for RudraCompilerCalls {
+impl rustc_driver::Callbacks for YugaCompilerCalls {
     fn after_analysis<'tcx>(
         &mut self,
         compiler: &Compiler,
@@ -35,7 +35,7 @@ impl rustc_driver::Callbacks for RudraCompilerCalls {
     ) -> Compilation {
         compiler.session().abort_if_errors();
 
-        rudra::log::setup_logging(self.config.verbosity).expect("Rudra failed to initialize");
+        yuga::log::setup_logging(self.config.verbosity).expect("Yuga failed to initialize");
 
         debug!(
             "Input file name: {}",
@@ -43,11 +43,11 @@ impl rustc_driver::Callbacks for RudraCompilerCalls {
         );
         debug!("Crate name: {}", queries.crate_name().unwrap().peek_mut());
 
-        progress_info!("Rudra started");
+        progress_info!("Yuga started");
         queries.global_ctxt().unwrap().peek_mut().enter(|tcx| {
             analyze(tcx, self.config);
         });
-        progress_info!("Rudra finished");
+        progress_info!("Yuga finished");
 
         compiler.session().abort_if_errors();
         Compilation::Stop
@@ -74,11 +74,11 @@ fn run_compiler(
         }
     }
 
-    // Some options have different defaults in Rudra than in plain rustc; apply those by making
+    // Some options have different defaults in Yuga than in plain rustc; apply those by making
     // them the first arguments after the binary name (but later arguments can overwrite them).
     args.splice(
         1..1,
-        rudra::RUDRA_DEFAULT_ARGS.iter().map(ToString::to_string),
+        yuga::YUGA_DEFAULT_ARGS.iter().map(ToString::to_string),
     );
 
     // Invoke compiler, and handle return code.
@@ -89,14 +89,14 @@ fn run_compiler(
     exit_code
 }
 
-fn parse_config() -> (RudraConfig, Vec<String>) {
+fn parse_config() -> (YugaConfig, Vec<String>) {
     // collect arguments
-    let mut config = RudraConfig::default();
+    let mut config = YugaConfig::default();
 
     let mut rustc_args = vec![];
     for arg in std::env::args() {
         match arg.as_str() {
-            "-Zrudra-enable-lifetime" => config.lifetime_enabled = true,
+            "-Zyuga-enable-lifetime" => config.lifetime_enabled = true,
             "-v" => config.verbosity = Verbosity::Verbose,
             "-vv" => config.verbosity = Verbosity::Trace,
             "-Zsensitivity-high" => config.report_level = ReportLevel::Error,
@@ -135,10 +135,10 @@ fn main() {
         }
 
         // Finally, add the default flags all the way in the beginning, but after the binary name.
-        rustc_args.splice(1..1, RUDRA_DEFAULT_ARGS.iter().map(ToString::to_string));
+        rustc_args.splice(1..1, YUGA_DEFAULT_ARGS.iter().map(ToString::to_string));
 
         debug!("rustc arguments: {:?}", &rustc_args);
-        run_compiler(rustc_args, &mut RudraCompilerCalls::new(config))
+        run_compiler(rustc_args, &mut YugaCompilerCalls::new(config))
     };
 
     std::process::exit(exit_code)

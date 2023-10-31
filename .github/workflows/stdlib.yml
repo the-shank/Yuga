@@ -42,4 +42,4 @@ jobs:
 
     - name: Analyze standard library
       working-directory: stdlib-analysis
-      run: ./rudra_analyze_std.sh
+      run: ./yuga_analyze_std.sh

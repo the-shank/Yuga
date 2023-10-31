@@ -1,8 +1,8 @@
 [package]
-name = "rudra"
+name = "yuga"
 version = "0.1.0"
 authors = ["Yechan Bae <yechan@gatech.edu>"]
-default-run = "rudra"
+default-run = "yuga"
 edition = "2021"
 exclude = ["samples"]
 
@@ -13,12 +13,12 @@ test = true
 doctest = false
 
 [[bin]]
-name = "rudra"
+name = "yuga"
 test = false
 doctest = false
 
 [[bin]]
-name = "cargo-rudra"
+name = "cargo-yuga"
 test = false
 doctest = false
 

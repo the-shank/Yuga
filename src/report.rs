@@ -40,13 +40,13 @@ pub fn init_report_logger(report_logger: Box<dyn ReportLogger>) -> FlushHandle {
 }
 
 pub fn default_report_logger() -> Box<dyn ReportLogger> {
-    match env::var_os("RUDRA_REPORT_PATH") {
+    match env::var_os("YUGA_REPORT_PATH") {
         Some(val) => Box::new(FileLogger::new(val)),
         None => Box::new(StderrLogger::new()),
     }
 }
 
-pub fn rudra_report(report: Report) {
+pub fn yuga_report(report: Report) {
     REPORT_LOGGER.get().unwrap().log(report);
 }
 
@@ -92,11 +92,11 @@ impl Report {
         let span = hir_map.span(item_hir_id);
 
         let source_map = tcx.sess.source_map();
-        let source = 
+        let source =
             source_map
                 .span_to_snippet(span)
                 .unwrap_or_else(|e| format!("unable to get source: {:?}", e));
-                
+
         let location = source_map.span_to_diagnostic_string(span);
 
         Report {
@@ -210,13 +210,13 @@ impl ReportLogger for FileLogger {
                 toml::to_string_pretty(&Reports {
                     reports: reports_ref,
                 })
-                .expect("failed to serialize Rudra report")
+                .expect("failed to serialize Yuga report")
                 // We manually converts some characters inside toml strings
                 // Match this list with test.py
                 .replace("\\u001B", "\u{001B}")
                 .replace("\\t", "\t"),
             )
-            .expect("cannot write Rudra report to file");
+            .expect("cannot write Yuga report to file");
         }
     }
 }

@@ -16,7 +16,7 @@ if [ "$4" != "." ]; then
   		*) echo "Invalid sub-path '$4'"; cd -;;
 	esac
 fi
-cargo rudra --all-features 2>&1
+cargo yuga --all-features 2>&1
 if [ -d "$(pwd)/yuga_reports" ]; then
 	mv "$(pwd)/yuga_reports" $2
 fi
