@@ -21,6 +21,7 @@ Here is a list of bugs in public Rust projects detected by Yuga so far:
 
 |       Project       |                           Issue/PR                            | Public/Private API |          Status              |
 |---------------------|---------------------------------------------------------------|--------------------|------------------------------|
+| bv-rs               | https://github.com/tov/bv-rs/issues/16                        |       Public       |   Confirmed with Miri
 | pulse-binding-rust  | https://github.com/jnqnfe/pulse-binding-rust/issues/53        |       Public       |   Confirmed with Valgrind    |
 | json-rust / jzon-rs | https://github.com/maciejhirsz/json-rust/pull/209             |       Public       |   Confirmed by dev           |
 | cslice              | https://github.com/dherman/cslice/issues/5                    |       Public       |   Confirmed with Miri        |
