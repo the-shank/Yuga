@@ -24,7 +24,7 @@ Here is a list of bugs in public Rust projects detected by Yuga so far:
 | alsa                | https://github.com/diwic/alsa-rs/issues/117                   |       Public       |   Unconfirmed                |           
 | bv                  | https://github.com/tov/bv-rs/issues/16                        |       Public       |   Confirmed with Miri        |
 | pulse-binding-rust  | https://github.com/jnqnfe/pulse-binding-rust/issues/53        |       Public       |   Confirmed with Valgrind    |
-| json-rust / jzon-rs | https://github.com/maciejhirsz/json-rust/pull/209             |       Public       |   Confirmed by dev           |
 | cslice              | https://github.com/dherman/cslice/issues/5                    |       Public       |   Confirmed with Miri        |
+| json-rust / jzon-rs | https://github.com/maciejhirsz/json-rust/pull/209             |       Private      |   Confirmed by dev           |
 | sled                | https://github.com/spacejam/sled/issues/1442                  |       Private      |   Confirmed by dev           |
 | tokio               | https://github.com/tokio-rs/tokio/issues/5113                 |       Private      |   Unconfirmed                |
