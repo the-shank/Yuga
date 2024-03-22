@@ -5,18 +5,19 @@ use rustc_middle::mir::ProjectionElem::{Deref, Field};
 use rustc_middle::mir::{Body, TerminatorKind, Terminator};
 use rustc_middle::mir::traversal;
 
-use crate::analysis::lifetime::config;
 use crate::progress_info;
+use crate::YugaConfig;
 
 pub struct TaintAnalyzer<'a, 'b:'a> {
     body:           &'a Body<'b>,
     taint_list:     Vec<(Local, Option<usize>)>,
+    config:         YugaConfig,
 }
 
 impl<'a, 'b:'a> TaintAnalyzer<'a, 'b> {
 
-    pub fn new(body: &'a Body<'b>) -> Self {
-        TaintAnalyzer { body, taint_list: Vec::new()}
+    pub fn new(body: &'a Body<'b>, config: YugaConfig) -> Self {
+        TaintAnalyzer { body, taint_list: Vec::new(), config}
     }
 
     pub fn get_first_field_from_place(place: &Place) -> Option<usize> {

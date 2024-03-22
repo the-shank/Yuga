@@ -3,7 +3,6 @@
 pub mod utils;
 pub mod process;
 pub mod iterators;
-pub mod config;
 mod report;
 mod checks;
 mod taint;
@@ -15,9 +14,11 @@ use utils::{
     compare_lifetimes,
     get_first_field,
     get_type_definition,
+    get_name_from_param,
+    get_actual_type,
 };
 
-use report::generate_report;
+use report::{arg_return_uaf_report, arg_arg_uaf_report, arg_return_mut_report, generate_llm_query};
 
 use crate::utils::{print_span, format_span, format_span_with_diag};
 
@@ -33,7 +34,8 @@ use alias::AliasAnalyzer;
 use mirfunc::MirFunc;
 use iterators::fn_iter;
 
-use crate::progress_info;
+use crate::{progress_info, progress_warn};
+use crate::YugaConfig;
 
 use rustc_hir::{def_id::DefId, BodyId, Param, Ty, Mutability, FnSig};
 use rustc_hir::LifetimeName;
@@ -53,6 +55,7 @@ use std::convert::TryInto;
 use std::clone;
 use std::collections::{HashMap, HashSet};
 use std::fs;
+use serde_json::{Result, Value};
 
 // use rand::{distributions::Alphanumeric, Rng}; // 0.8
 
@@ -60,16 +63,18 @@ pub struct Report {
     html: String,
     func_name: String,
     error_type: String,
+    queries: Vec<String>,
 }
 
 pub struct LifetimeChecker<'tcx> {
-    tcx: &'tcx TyCtxt<'tcx>
+    tcx: &'tcx TyCtxt<'tcx>,
+    config: YugaConfig
 }
 
 impl<'tcx> LifetimeChecker<'tcx> {
 
-    pub fn new(tcx: &'tcx TyCtxt<'tcx>) -> Self {
-        LifetimeChecker { tcx: tcx }
+    pub fn new(tcx: &'tcx TyCtxt<'tcx>, config: YugaConfig) -> Self {
+        LifetimeChecker { tcx, config }
     }
 
     fn debug_output<'a>(&self, func: &MirFunc<'tcx, 'a>) {
@@ -111,8 +116,8 @@ impl<'tcx> LifetimeChecker<'tcx> {
 
     fn check_arg_return_violations<'a>(&self, func: &MirFunc<'tcx, 'a>) -> Option<Report> {
 
-        let mut taint_analyzer = TaintAnalyzer::new(&func.mir_body);
-        let mut alias_analyzer = AliasAnalyzer::new(&func.mir_body);
+        let mut taint_analyzer = TaintAnalyzer::new(&func.mir_body, self.config.clone());
+        let mut alias_analyzer = AliasAnalyzer::new(&func.mir_body, self.config.clone());
 
         if let rustc_hir::FnRetTy::Return(ret_type) = func.fn_sig.decl.output {
 
@@ -131,7 +136,7 @@ impl<'tcx> LifetimeChecker<'tcx> {
                 for tgt_ty in ret_subtypes.iter() {
                     for src_ty in inp_subtypes.iter() {
 
-                        if config::generic_matches_all {
+                        if self.config.generic_matches_all {
                             // def_id `None` matches everything
                             if src_ty.def_id.is_some() && tgt_ty.def_id.is_some()
                                 && (src_ty.def_id != tgt_ty.def_id)
@@ -153,7 +158,7 @@ impl<'tcx> LifetimeChecker<'tcx> {
                         let target_field = get_first_field(&tgt_ty.projection);
 
                         // First check for use-after-free violations
-                        let (violation, (src_bounding_lt, tgt_bounding_lt)) = checks::arg_return_outlives(&src_ty, &tgt_ty, &bounds);
+                        let (violation, (src_bounding_lt, tgt_bounding_lt), (src_is_raw, tgt_is_raw)) = checks::arg_return_outlives(&src_ty, &tgt_ty, &bounds, &self.tcx, self.config.clone());
 
                         if violation {
                             let source_place: Option<Place> = get_mir_value_from_hir_param(&func.params[inp_num], &func.mir_body);
@@ -164,10 +169,10 @@ impl<'tcx> LifetimeChecker<'tcx> {
                             let mut debug = false;
                             let dataflow_detected: bool;
 
-                            if config::no_mir {
+                            if self.config.no_mir {
                                 dataflow_detected = true;
                             }
-                            else if config::alias_analysis {
+                            else if self.config.alias_analysis {
                                 dataflow_detected = alias_analyzer.check_alias(&source_place.local, &src_ty.projection,
                                                                                &Local::from_usize(0), &tgt_ty.projection, debug);
                                 alias_analyzer.reset();
@@ -177,15 +182,26 @@ impl<'tcx> LifetimeChecker<'tcx> {
                                 dataflow_detected = taint_analyzer.check_taint(&Local::from_usize(0), target_field);
                             }
                             if dataflow_detected {
-                                let html: String = generate_report(self.tcx, &func, inp_num, src_ty, tgt_ty, src_bounding_lt, tgt_bounding_lt);
-
-                                return Some(Report{html, func_name: String::new(), error_type: "uaf".to_string()});
+                                let html: String = arg_return_uaf_report(self.tcx, &func, inp_num, src_ty, tgt_ty, src_bounding_lt, tgt_bounding_lt);
+                                let mut queries: Vec<String> = Vec::new();
+                                if src_ty.in_struct {
+                                    let arg_name = get_name_from_param(&func.params[inp_num]).unwrap();
+                                    queries.push(generate_llm_query(self.tcx, arg_name.to_string(), get_actual_type(inp, self.tcx).span, src_ty));
+                                }
+                                // if tgt_ty.in_struct && tgt_is_raw {
+                                //     queries.push(generate_llm_query(self.tcx, "ret".to_string(), ret_type.span, tgt_ty));
+                                // }
+                                return Some(Report{html,
+                                                   func_name:   String::new(),
+                                                   error_type:  "uaf".to_string(),
+                                                   queries });
                             }
                             taint_analyzer.clear_taint();
                         }
 
-                        if checks::arg_return_mut(&src_ty, &tgt_ty, &bounds) {
+                        let (violation, (src_bounding_lt, tgt_bounding_lt)) = checks::arg_return_mut(&src_ty, &tgt_ty, &bounds, self.config.clone());
 
+                        if violation {
                             let source_place: Option<Place> = get_mir_value_from_hir_param(&func.params[inp_num], &func.mir_body);
                             if source_place.is_none() {
                                 continue;
@@ -194,10 +210,10 @@ impl<'tcx> LifetimeChecker<'tcx> {
 
                             let dataflow_detected: bool;
 
-                            if config::no_mir {
+                            if self.config.no_mir {
                                 dataflow_detected = true;
                             }
-                            else if config::alias_analysis {
+                            else if self.config.alias_analysis {
                                 dataflow_detected = alias_analyzer.check_alias(&source_place.local, &src_ty.projection,
                                                                                &Local::from_usize(0), &tgt_ty.projection, false);
                                 alias_analyzer.reset();
@@ -207,14 +223,13 @@ impl<'tcx> LifetimeChecker<'tcx> {
                                 dataflow_detected = taint_analyzer.check_taint(&Local::from_usize(0), target_field);
                             }
                             if dataflow_detected {
-                                // println!("---------- Potential aliased mutability! ----------");
-                                // print_span(*self.tcx, &func.fn_sig.span);
-                                // println!("Arg {:?}, Return {:?}", format_span(*self.tcx, &inp.span), format_span(*self.tcx, &ret_type.span));
-                                // println!("The compatible types are {:?} , {:?}", src_ty.def_id, tgt_ty.def_id);
-                                // println!("Arg Lifetime {:?}", &src_ty.lifetimes);
-                                // println!("Return type lifetime : {:?}", &tgt_ty.lifetimes);
+                                let html: String = arg_return_mut_report(self.tcx, &func, inp_num, src_ty, tgt_ty, src_bounding_lt, tgt_bounding_lt);
 
-                                return None; // TODO
+                                return Some(Report{html,
+                                                   func_name:   String::new(),
+                                                   error_type:  "uaf".to_string(),
+                                                   queries:     Vec::new() });
+
                             }
                             taint_analyzer.clear_taint();
                         }
@@ -227,8 +242,8 @@ impl<'tcx> LifetimeChecker<'tcx> {
 
     fn check_arg_arg_violations<'a>(&self, func: &MirFunc<'tcx, 'a>) -> Option<Report> {
 
-        let mut taint_analyzer = TaintAnalyzer::new(&func.mir_body);
-        let mut alias_analyzer = AliasAnalyzer::new(&func.mir_body);
+        let mut taint_analyzer = TaintAnalyzer::new(&func.mir_body, self.config.clone());
+        let mut alias_analyzer = AliasAnalyzer::new(&func.mir_body, self.config.clone());
 
         for (inp_num1, inp1) in func.fn_sig.decl.inputs.iter().enumerate() {
 
@@ -248,7 +263,7 @@ impl<'tcx> LifetimeChecker<'tcx> {
                 for src_ty in inp1_subtypes.iter() {
                     for tgt_ty in inp2_subtypes.iter() {
 
-                        if config::generic_matches_all {
+                        if self.config.generic_matches_all {
                             // def_id `None` matches everything
                             if src_ty.def_id.is_some() && tgt_ty.def_id.is_some()
                                 && (src_ty.def_id != tgt_ty.def_id)
@@ -265,7 +280,8 @@ impl<'tcx> LifetimeChecker<'tcx> {
                                 continue;
                             }
                         }
-                        if checks::arg_arg_outlives(&src_ty, &tgt_ty, &bounds2) {
+                        let (violation, (src_bounding_lt, tgt_bounding_lt)) = checks::arg_arg_outlives(&src_ty, &tgt_ty, &bounds2, self.config.clone());
+                        if violation {
 
                             let source_place: Option<Place> = get_mir_value_from_hir_param(&func.params[inp_num1], &func.mir_body);
                             if source_place.is_none() {
@@ -282,10 +298,10 @@ impl<'tcx> LifetimeChecker<'tcx> {
 
                             let dataflow_detected: bool;
 
-                            if config::no_mir {
+                            if self.config.no_mir {
                                 dataflow_detected = true;
                             }
-                            else if config::alias_analysis {
+                            else if self.config.alias_analysis {
                                 dataflow_detected = alias_analyzer.check_alias(&source_place.local, &src_ty.projection,
                                                                                &target_place.local, &tgt_ty.projection, false);
                                 alias_analyzer.reset();
@@ -296,14 +312,17 @@ impl<'tcx> LifetimeChecker<'tcx> {
                             }
 
                             if dataflow_detected {
-                                // println!("---------- Potential use-after-free! ----------");
-                                // print_span(*self.tcx, &func.fn_sig.span);
-                                // println!("Arg {:?}, Arg {:?}", format_span(*self.tcx, &inp1.span), format_span(*self.tcx, &inp2.span));
-                                // println!("The compatible types are {:?} , {:?}", src_ty.def_id, tgt_ty.def_id);
-                                // println!("Arg {} Lifetime {:?}", inp_num1, &src_ty.lifetimes);
-                                // println!("Arg {} Owner Lifetime : {:?}", inp_num2, &tgt_ty.lifetimes);
-                                // println!("\n");
-                                return None; // TODO
+                                let html: String = arg_arg_uaf_report(self.tcx, &func, inp_num1, inp_num2, src_ty, tgt_ty, src_bounding_lt, tgt_bounding_lt);
+                                let mut queries: Vec<String> = Vec::new();
+                                let arg_name1 = get_name_from_param(&func.params[inp_num1]).unwrap();
+                                queries.push(generate_llm_query(self.tcx, arg_name1.to_string(), get_actual_type(inp1, self.tcx).span, src_ty));
+                                // if tgt_ty.in_struct && tgt_is_raw {
+                                //     queries.push(generate_llm_query(self.tcx, "ret".to_string(), ret_type.span, tgt_ty));
+                                // }
+                                return Some(Report{html,
+                                                   func_name:   String::new(),
+                                                   error_type:  "uaf".to_string(),
+                                                   queries });
                             }
                             taint_analyzer.clear_taint();
                         }
@@ -316,9 +335,11 @@ impl<'tcx> LifetimeChecker<'tcx> {
 
     pub fn analyze(mut self) {
 
+        println!("Logging reports to {}", self.config.report_dir.clone());
+
         let mut reports: Vec<Report> = Vec::new();
 
-        for mirfunc in fn_iter(&self.tcx) {
+        for mirfunc in fn_iter(&self.tcx, self.config.clone()) {
 
             // We don't need to check unsafe functions
             if mirfunc.fn_sig.header.unsafety == rustc_hir::Unsafety::Unsafe {
@@ -326,9 +347,10 @@ impl<'tcx> LifetimeChecker<'tcx> {
             }
             let mut fname = mirfunc.func_name.clone();
             if fname.contains("::") {
-                fname = fname.split("::").last().unwrap().to_string()
+                fname = fname.split("::").last().unwrap().to_string();
             }
-            if config::filter {
+            println!("Func name: {:?}", &mirfunc.func_name);
+            if self.config.shallow_filter {
                 // Shallow filters for common patterns of false positives in trait implementations
                 if fname == "clone" || mirfunc.impl_trait == "Clone" {
                     continue;
@@ -337,9 +359,11 @@ impl<'tcx> LifetimeChecker<'tcx> {
                     continue;
                 }
             }
-            if mirfunc.func_name.contains(&config::debug_fn) {
-                println!("Func name: {:?}", &mirfunc.func_name);
-                self.debug_output(&mirfunc);
+            if let Some(ref debug_fn) = self.config.debug_fn {
+                if mirfunc.func_name.contains(debug_fn) {
+                    println!("Func name: {:?}", &mirfunc.func_name);
+                    self.debug_output(&mirfunc);
+                }
             }
             let mut report = self.check_arg_return_violations(&mirfunc);
             if let Some(mut report) = report {
@@ -359,27 +383,38 @@ impl<'tcx> LifetimeChecker<'tcx> {
             return;
         }
 
-        fs::remove_dir_all("yuga_reports/");
-        fs::create_dir_all("yuga_reports/");
+        fs::remove_dir_all(self.config.report_dir.as_str());
+        fs::create_dir_all(self.config.report_dir.as_str());
 
-        let mut filename_repeat_count: HashMap<String, u32> = HashMap::new();
+        let mut name_repeat_count: HashMap<String, u32> = HashMap::new();
 
         for report in reports.iter() {
 
-            let mut filename: String = format!("yuga_reports/{}-{}.html", report.func_name, report.error_type);
+            let mut folder_name: String = format!("{}/{}-{}", self.config.report_dir.clone(), report.func_name, report.error_type);
 
-            match filename_repeat_count.get_mut(&filename) {
+            match name_repeat_count.get_mut(&folder_name) {
                 Some(count) => {
-                    filename = format!("yuga_reports/{}-{}-{}.html", report.func_name, report.error_type, count);
+                    folder_name = format!("{}/{}-{}-{}", self.config.report_dir.clone(), report.func_name, report.error_type, count);
                     *count += 1;
                 },
                 None => {
-                    filename_repeat_count.insert(filename.clone(), 1 as u32);
+                    name_repeat_count.insert(folder_name.clone(), 1 as u32);
                 }
             }
-            fs::write(&filename, &report.html);
-            progress_info!("Wrote report to {}", filename);
+
+            fs::create_dir(&folder_name);
+            let report_filename: String = folder_name.clone() + "/report.html";
+
+            match fs::write(&report_filename, &report.html) {
+                Ok(_) => progress_info!("Wrote report to {}", report_filename),
+                Err(_) => progress_warn!("Could not write report to {}", report_filename)
+            }
+
+            for (i, query) in report.queries.iter().enumerate() {
+                let query_filename: String = folder_name.clone() + &format!("/query{i}.md");
+                fs::write(&query_filename, query);
+            }
         }
-        progress_info!("Found {} lifetime annotation bugs. Detailed reports can be found in ./yuga_reports", reports.len());
+        progress_info!("Found {} lifetime annotation bugs. Detailed reports can be found in {}", reports.len(), self.config.report_dir.clone());
     }
 }

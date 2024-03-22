@@ -308,7 +308,7 @@ pub fn get_sub_types_dbg<'tcx>(	ty: 			&'tcx Ty<'tcx>,
             }
             // ------------------------------------------------
             // Now if it's a structure, try to get the definition
-
+ 
 			let node = tcx.hir().get_if_local(*def_id);
 
 		    if node.is_none() || known_defids.contains(&def_id) {
@@ -355,8 +355,8 @@ pub fn get_sub_types_dbg<'tcx>(	ty: 			&'tcx Ty<'tcx>,
 												 				 x.lifetimes[i].name = Some(struct_lt);
 												 				 x
 																}).collect();
-			    					break;
 			    				}
+								break;
 			    			}
 			    		}
 				    	types.append(&mut new_types);
@@ -396,7 +396,7 @@ pub fn get_sub_types_dbg<'tcx>(	ty: 			&'tcx Ty<'tcx>,
 				// new_defid_remap 	= new_defid_remap.iter()
 				// 									.map(|(&x, &y)| (x, apply_remap(y, &defid_remap)))
 				// 									.collect();
-				// Is this necessary?
+				// Is this necessary? Can't hurt anyway
 				new_lifetime_remap 	= new_lifetime_remap.iter()
 														.map(|(&x, &y)| (x, apply_remap(y, &lifetime_remap)))
 														.collect();
@@ -423,9 +423,9 @@ pub fn get_sub_types_dbg<'tcx>(	ty: 			&'tcx Ty<'tcx>,
 		    			if struct_lifetimes.len() != 0 {
 			    			for (i, lt) in temp.lifetimes.iter().enumerate() {
 			    				if lt.is_refcell { continue; }
-			    				// Pick out the first non-refcell lifetime. Check if it's raw and has no existing lifetimes
-			    				// Then replace it with the structure lifetime.
-			    				// If there are multiple structure lifetimes, create multiple subtypes
+			    				// Pick out the first non-refcell lifetime. Check if it's raw.
+			    				// If it has no existing lifetimes, replace it with the structure lifetime.
+			    				// If there are multiple structure lifetimes, create multiple subtypes. TODO - this isn't quite right
 			    				if lt.is_raw && lt.name.is_none() {
 			    					new_types = struct_lifetimes.iter()
 			    						    					.map(|&struct_lt|
@@ -433,8 +433,8 @@ pub fn get_sub_types_dbg<'tcx>(	ty: 			&'tcx Ty<'tcx>,
 			    											    x.lifetimes[i].name = Some(struct_lt);
 			    											    x
 			    											  }).collect();
-			    					break;
 			    				}
+								break;
 			    			}
 			    		}
 				    	types.append(&mut new_types);

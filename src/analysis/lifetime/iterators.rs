@@ -5,7 +5,7 @@ use crate::analysis::lifetime::utils::{
 	get_mir_fn_from_defid,
 	get_lifetime_lifetime_bounds,
 };
-use crate::analysis::lifetime::config;
+use crate::YugaConfig;
 
 use rustc_hir::def_id::DefId;
 use rustc_hir::{Item, ImplItem};
@@ -19,9 +19,10 @@ pub struct FnIter<'tcx, 'a> {
 	tcx: 		&'a TyCtxt<'tcx>,
 	ind: 		usize,
 	impl_ind: 	usize,
+	config: 	YugaConfig,
 }
 
-pub fn fn_iter<'a, 'tcx>(tcx: &'a TyCtxt<'tcx>) -> FnIter<'tcx, 'a> {
+pub fn fn_iter<'a, 'tcx>(tcx: &'a TyCtxt<'tcx>, config: YugaConfig) -> FnIter<'tcx, 'a> {
 
 	let hir_map = tcx.hir();
 	let mut items: Vec<&rustc_hir::Item> = Vec::new();
@@ -37,7 +38,7 @@ pub fn fn_iter<'a, 'tcx>(tcx: &'a TyCtxt<'tcx>) -> FnIter<'tcx, 'a> {
 		}
 	}
 
-	FnIter{items, tcx, ind: 0, impl_ind: 0}
+	FnIter{items, tcx, ind: 0, impl_ind: 0, config}
 }
 
 impl<'tcx, 'a> Iterator for FnIter<'tcx, 'a> {
@@ -64,21 +65,23 @@ impl<'tcx, 'a> Iterator for FnIter<'tcx, 'a> {
 	            	source_map
 	                .span_to_snippet(item.vis_span)
 	                .unwrap_or_else(|e| format!("unable to get source: {:?}", e));
-	            if config::pub_only && (vis_string != "pub") {
+	            if self.config.pub_only && (vis_string != "pub") {
 	            	self.ind += 1;
 	            	return self.next();
 	            }
 
 				let params      	= hir_map.body(*body_id).params;
+				let body_span 		= hir_map.body(*body_id).value.span;
 				let func_name   	= format!("{}", item.ident.name.as_str());
 				let impl_trait		= "".to_string();
 				let generic_bounds  = get_bounds_from_generics(&generics, &hir_map);
 				let lifetime_bounds = get_lifetime_lifetime_bounds(&generics);
-				let body_defid  	= hir_map.body_owner_def_id(*body_id).to_def_id();
+				let body_defid 		= hir_map.body_owner_def_id(*body_id).to_def_id();
 				let mir_body 		= get_mir_fn_from_defid(self.tcx, body_defid).unwrap();
 
 				let mirfunc 		= MirFunc {
 						fn_sig: 			fn_sig,
+						body_span: 			body_span,
 						func_name: 			func_name,
 						impl_trait:			impl_trait,
 						params: 			params,
@@ -136,7 +139,7 @@ impl<'tcx, 'a> Iterator for FnIter<'tcx, 'a> {
 
 		            // Impl of pub traits of a public type are public even if not specified
 		            let is_trait_impl = this_impl.of_trait.is_some();
-		            if config::pub_only && (vis_string != "pub")
+		            if self.config.pub_only && (vis_string != "pub")
 		            		&& !(is_trait_impl && type_vis == "pub") {
 		            	return self.next();
 		            }
@@ -157,6 +160,7 @@ impl<'tcx, 'a> Iterator for FnIter<'tcx, 'a> {
 
 					let params      = hir_map.body(*body_id).params;
 					let body_defid  = hir_map.body_owner_def_id(*body_id).to_def_id();
+					let body_span 	= hir_map.body(*body_id).value.span;
 
 					let mut func_name: String = "".to_owned();
 
@@ -174,6 +178,7 @@ impl<'tcx, 'a> Iterator for FnIter<'tcx, 'a> {
 
 					let mirfunc 	= MirFunc {
 							fn_sig: 			fn_sig,
+							body_span: 			body_span,
 							func_name: 			func_name,
 							impl_trait:			impl_trait,
 							params: 			params,

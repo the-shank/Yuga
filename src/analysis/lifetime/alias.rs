@@ -5,21 +5,23 @@ use rustc_middle::mir::ProjectionElem::{Deref, Field};
 use rustc_middle::mir::{Body, TerminatorKind, Terminator};
 use rustc_middle::mir::traversal;
 
-use crate::analysis::lifetime::config::{self, Precision};
 use crate::progress_info;
 use crate::analysis::lifetime::utils::MyProjection::{self, MyDeref, MyField};
 use crate::analysis::lifetime::utils::FieldInfo;
+
+use crate::YugaConfig;
 
 pub struct AliasAnalyzer<'a, 'b:'a> {
     body:           &'a Body<'b>,
     points_to_map:  HashMap<(Local, Option<usize>), HashSet<(Local, Option<usize>)>>,
     next_alloc:     u32,
+    config:         YugaConfig
 }
 
 impl<'a, 'b:'a> AliasAnalyzer<'a, 'b> {
 
-    pub fn new(body: &'a Body<'b>) -> Self {
-        AliasAnalyzer { body, points_to_map: HashMap::new(), next_alloc: Local::MAX_AS_U32}
+    pub fn new(body: &'a Body<'b>, config: YugaConfig) -> Self {
+        AliasAnalyzer { body, points_to_map: HashMap::new(), next_alloc: Local::MAX_AS_U32, config}
     }
 
     pub fn reset(&mut self) {
@@ -93,7 +95,7 @@ impl<'a, 'b:'a> AliasAnalyzer<'a, 'b> {
                                                                                          .filter(|&&(a, b)| (a == l) && b.is_some())
                                                                                          .map(|&x| x)
                                                                                          .collect();
-                if config::wildcard_field {
+                if self.config.wildcard_field {
                     with_fields.insert((l, Some(usize::MAX))); // Wildcard field, matches anything
                 }
                 all_modified = all_modified.union(&with_fields).map(|&k| k).collect();
@@ -184,13 +186,19 @@ impl<'a, 'b:'a> AliasAnalyzer<'a, 'b> {
     {
         let mut values = self.decompose_place(place);
 
-        while true {
+        let mut count = 0;
+
+        loop {
             let old_values = values.clone();
             let derefs = self.apply_deref(values.clone(), false);
             let fields = self.apply_unknown_field(derefs.clone());
             values = values.union(&fields).map(|&k| k).collect();
             if values == old_values {
                 break;
+            }
+            count += 1;
+            if count > 1000 {
+                panic!("Infinite loop in recursively_deref");
             }
         }
         values

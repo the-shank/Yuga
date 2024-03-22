@@ -32,20 +32,30 @@ pub mod utils;
 
 use rustc_middle::ty::TyCtxt;
 
-use crate::analysis::{LifetimeChecker};
+use crate::analysis::LifetimeChecker;
 use crate::log::Verbosity;
 use crate::report::ReportLevel;
+
+use std::time::Instant;
 
 // Insert rustc arguments at the beginning of the argument list that Yuga wants to be
 // set per default, for maximal validation power.
 pub static YUGA_DEFAULT_ARGS: &[&str] =
     &["-Zalways-encode-mir", "-Zmir-opt-level=0", "--cfg=yuga"];
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct YugaConfig {
     pub verbosity: Verbosity,
     pub report_level: ReportLevel,
-    pub lifetime_enabled: bool,
+    pub generic_matches_all: bool,
+    pub wildcard_field: bool,
+    pub pub_only: bool,
+    pub shallow_filter: bool,
+    pub alias_analysis: bool,
+    pub no_mir: bool,
+    pub filter_by_drop_impl: bool,
+    pub debug_fn: Option<String>,
+    pub report_dir: String,
 }
 
 impl Default for YugaConfig {
@@ -53,7 +63,15 @@ impl Default for YugaConfig {
         YugaConfig {
             verbosity: Verbosity::Normal,
             report_level: ReportLevel::Info,
-            lifetime_enabled: true
+            generic_matches_all: false,
+            wildcard_field: true,
+            pub_only: true,
+            shallow_filter: true,
+            alias_analysis: true,
+            no_mir: false,
+            filter_by_drop_impl: false,
+            debug_fn: None,
+            report_dir: String::from("yuga_reports"),
         }
     }
 }
@@ -85,10 +103,13 @@ pub fn compile_time_sysroot() -> Option<String> {
 fn run_analysis<F, R>(name: &str, f: F) -> R
 where
     F: FnOnce() -> R,
-{
+{   
+    let now = Instant::now();
     progress_info!("{} analysis started", name);
     let result = f();
     progress_info!("{} analysis finished", name);
+    let elapsed = now.elapsed();
+    println!("Elapsed: {:.2?}", elapsed);
     result
 }
 
@@ -96,10 +117,8 @@ pub fn analyze<'tcx>(tcx: TyCtxt<'tcx>, config: YugaConfig) {
     // workaround to mimic arena lifetime
     let tcx = &*Box::leak(Box::new(tcx));
 
-    if config.lifetime_enabled {
-        run_analysis("LifetimeChecker", || {
-            let checker = LifetimeChecker::new(tcx);
-            checker.analyze();
-        })
-    }
+    run_analysis("LifetimeChecker", || {
+        let checker = LifetimeChecker::new(tcx, config);
+        checker.analyze();
+    })
 }

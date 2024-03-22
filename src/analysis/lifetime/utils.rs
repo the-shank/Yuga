@@ -38,6 +38,43 @@ pub enum MyProjection {
     MyField(FieldInfo)
 }
 
+pub fn get_drop_impl(struct_def_id: DefId, tcx: &TyCtxt) -> Option<Span> {
+
+    let hir_map = tcx.hir();
+
+    for item_id in hir_map.items() {
+
+        let item = hir_map.expect_item(item_id.owner_id.def_id);
+
+        if let rustc_hir::ItemKind::Impl(this_impl) = &item.kind {
+            let (impl_def_id, _) = get_defid_args_from_kind(&this_impl.self_ty.kind);
+
+            if impl_def_id == Some(struct_def_id) {
+
+                for impl_item in this_impl.items {
+
+                    if let Some(
+                            rustc_hir::Node::ImplItem(
+                                rustc_hir::ImplItem{
+                                    kind: rustc_hir::ImplItemKind::Fn(_, _),
+                                    span,
+                                    ..
+                                }
+                            )
+                        ) = hir_map.find(impl_item.id.hir_id())
+                    {
+                        if impl_item.ident.name.as_str() == "drop" {
+                            return Some(*span);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+
 pub fn get_actual_type<'a, 'b>(ty: &'a Ty<'b>, tcx: &'a TyCtxt<'b>) -> &'a Ty<'b> {
 
     match &ty.kind {
