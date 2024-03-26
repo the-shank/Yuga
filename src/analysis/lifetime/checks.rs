@@ -14,15 +14,21 @@ pub fn arg_return_outlives( source_type:        &ShortLivedType,
                             lifetime_bounds:    &Vec<(LifetimeName, LifetimeName)>,
                             tcx:                &TyCtxt<'_>,
                             config:             YugaConfig,
-                       ) -> (bool, (Option<LifetimeName>, Option<LifetimeName>), (bool, bool)) {
+                            debug:              bool,
+                       ) -> (bool, (Vec<LifetimeName>, Vec<LifetimeName>), (bool, bool)) {
 
     let source_lifetimes = &source_type.lifetimes;
     let target_lifetimes = &target_type.lifetimes;
 
-    let mut src_bounding_lt: Option<LifetimeName> = None;
+    let mut src_bounding_lt: Vec<LifetimeName> = Vec::new();
     let mut first = true;
     let mut src_is_raw = false;
     let mut src_needs_drop_impl = false;
+
+    if debug {
+        println!("Source lifetimes:\n{:?}", source_lifetimes);
+        println!("Target_lifetimes:\n{:?}", target_lifetimes);
+    }
     
     // The source lifetime is the one that is "closest" to the value
     // Note that this is a reverse iterator
@@ -32,24 +38,24 @@ pub fn arg_return_outlives( source_type:        &ShortLivedType,
         // If the closest lifetime is a raw pointer, then we set src_is_raw = True
         if first && src_lifetime.is_raw {
             src_is_raw = true;
-            if src_lifetime.name.is_none() {
+            if src_lifetime.names.len() == 0 {
                 src_needs_drop_impl = true;
             }
         }
         first = false;
 
-        if src_lifetime.name.is_some() {
-            src_bounding_lt = src_lifetime.name;
+        if src_lifetime.names.len() > 0 {
+            src_bounding_lt = src_lifetime.names.clone();
             break;
         }
     }
     // If there are no source lifetimes, then we own the thing
     // and we can assume it'll live forever. No violation possible.
-    if src_bounding_lt.is_none() || src_bounding_lt == Some(LifetimeName::Static) {
-        return (false, (None, None), (false, false));
+    if (src_bounding_lt.len() == 0) || src_bounding_lt.contains(&LifetimeName::Static) {
+        return (false, (Vec::new(), Vec::new()), (false, false));
     }
 
-    let mut tgt_bounding_lt: Option<LifetimeName> = None;
+    let mut tgt_bounding_lt: Vec<LifetimeName> = Vec::new();
     let mut first = true;
     let mut tgt_is_raw = false;
     let mut tgt_needs_drop_impl = false;
@@ -60,24 +66,33 @@ pub fn arg_return_outlives( source_type:        &ShortLivedType,
                                             
         if first && tgt_lifetime.is_raw {
             tgt_is_raw = true;
-            if tgt_lifetime.name.is_none() {
+            if tgt_lifetime.names.len() == 0 {
                 tgt_needs_drop_impl = true;
             }
         }
         first = false;
 
-        if tgt_lifetime.name.is_some() {
-            tgt_bounding_lt = tgt_lifetime.name;
+        if tgt_lifetime.names.len() > 0 {
+            tgt_bounding_lt = tgt_lifetime.names.clone();
             break;
         }
     }
-    if (! src_is_raw) && (! tgt_is_raw) { return (false, (None, None), (false, false)); }
-    if (src_is_raw && (! source_type.in_struct)) || (tgt_is_raw && (! target_type.in_struct)) { return (false, (None, None), (false, false)); }
+    if debug {
+        println!("Source bounding lifetimes: {:?}", src_bounding_lt);
+        println!("Target bounding lifetimes: {:?}", tgt_bounding_lt);
+        println!("Source is raw: {:?}", src_is_raw);
+        println!("Target is raw: {:?}", tgt_is_raw);
+        println!("Source needs drop impl: {:?}", src_needs_drop_impl);
+        println!("Target needs drop impl: {:?}", tgt_needs_drop_impl);
+    }
+
+    if (! src_is_raw) && (! tgt_is_raw) { return (false, (Vec::new(), Vec::new()), (false, false)); }
+    if (src_is_raw && (! source_type.in_struct)) || (tgt_is_raw && (! target_type.in_struct)) { return (false, (Vec::new(), Vec::new()), (false, false)); }
 
     // If we are returning something that is neither a borrow nor raw pointer,
     // then this is not something we care about.
-    if tgt_bounding_lt.is_none() && ! tgt_is_raw {
-        return (false, (None, None), (false, false));
+    if (tgt_bounding_lt.len() == 0) && ! tgt_is_raw {
+        return (false, (Vec::new(), Vec::new()), (false, false));
     }
 
     fn check_if_drop_impl_exists(ty: &ShortLivedType, tcx: &TyCtxt<'_>) -> bool {
@@ -110,38 +125,55 @@ pub fn arg_return_outlives( source_type:        &ShortLivedType,
             src_needs_drop_impl = ! (check_if_drop_impl_exists(&source_type, &tcx));
         }
         if tgt_needs_drop_impl {
-            tgt_needs_drop_impl = ! (check_if_drop_impl_exists(&source_type, &tcx));
+            tgt_needs_drop_impl = ! (check_if_drop_impl_exists(&target_type, &tcx));
         }
-        if ! ((src_is_raw && !src_needs_drop_impl) || (tgt_is_raw && !tgt_needs_drop_impl)) {
-            return (false, (None, None), (false, false));
+        // If both of them are raw, and both don't have drop impl, then not a bug.
+        if (src_is_raw && tgt_is_raw) && (src_needs_drop_impl && tgt_needs_drop_impl) {
+            return (false, (Vec::new(), Vec::new()), (false, false));
         }
     }
+    // If we've made it this far and you are transfering ownership to the receiver,
+    // then that's a definite violation.
+    if (tgt_bounding_lt.len() == 0) || tgt_bounding_lt.contains(&LifetimeName::Static) {
+        return (true, (src_bounding_lt.clone(), tgt_bounding_lt.clone()), (false, false));
+    }
+    // We have some set of source lifetimes and some set of target lifetimes.
+    // This type could be associated with any of the source lifetimes.
+    // Need to check if all the source lifetimes outlive any of the target lifetimes.
+    for src_lt in src_bounding_lt.iter() {
+        let mut flag = false;
+        for tgt_lt in tgt_bounding_lt.iter() {
+            if compare_lifetimes(src_lt, tgt_lt) {
+                flag = true;
+                break;
+            }
+            else {
+                if lifetime_bounds.iter() // Source should outlive the target
+                    .any(|&(x, y)| compare_lifetimes(&x, &src_lt)
+                                && compare_lifetimes(&y, &tgt_lt))
+                { flag = true; break; }
+            }            
+        }
+        // This source lifetime is not compatible with any of the target lifetimes
+        if !flag {
+            return (true, (Vec::from([*src_lt]), tgt_bounding_lt.clone()), (src_is_raw, tgt_is_raw));
+        }
+    }
+    (false, (Vec::new(), Vec::new()), (false, false))
 
-    if tgt_bounding_lt.is_none() || tgt_bounding_lt == Some(LifetimeName::Static) {
-        return (true, (src_bounding_lt, tgt_bounding_lt), (false, false));
-    }
-    if compare_lifetimes(&src_bounding_lt.unwrap(), &tgt_bounding_lt.unwrap()) {
-        return (false, (None, None), (false, false));
-    }
-    else {
-        if lifetime_bounds.iter() // Source should outlive the target
-            .any(|&(x, y)| compare_lifetimes(&x, &src_bounding_lt.unwrap())
-                        && compare_lifetimes(&y, &tgt_bounding_lt.unwrap()))
-        { return (false, (None, None), (false, false)); }
-    }
-    (true, (src_bounding_lt, tgt_bounding_lt), (src_is_raw, tgt_is_raw))
 }
 
 pub fn arg_return_mut ( source_type:        &ShortLivedType,
                         target_type:        &ShortLivedType,
                         lifetime_bounds:    &Vec<(LifetimeName, LifetimeName)>,
                         config:             YugaConfig,
-                    ) -> (bool, (Option<LifetimeName>, Option<LifetimeName>)) {
+                        debug:              bool,
+                    ) -> (bool, (Vec<LifetimeName>, Vec<LifetimeName>)) {
 
     let source_lifetimes = &source_type.lifetimes;
     let target_lifetimes = &target_type.lifetimes;
 
-    let mut src_bounding_lt: Option<LifetimeName> = None;
+    let mut src_bounding_lt: Vec<LifetimeName> = Vec::new();
     let mut first = true;
     let mut src_is_raw = false;
 
@@ -149,17 +181,17 @@ pub fn arg_return_mut ( source_type:        &ShortLivedType,
         if src_lifetime.is_refcell { continue; }
         if first {
             if ! src_lifetime.is_mut {
-                return (false, (None, None));
+                return (false, (Vec::new(), Vec::new()));
             }
             src_is_raw = src_lifetime.is_raw;
             first = false;
             continue;
         }
-        src_bounding_lt = src_lifetime.name;
+        src_bounding_lt = src_lifetime.names.clone();
         break;
     }
-    if src_bounding_lt.is_none() || src_bounding_lt == Some(LifetimeName::Static) {
-        return (false, (None, None));
+    if (src_bounding_lt.len() == 0) || src_bounding_lt.contains(&LifetimeName::Static) {
+        return (false, (Vec::new(), Vec::new()));
     }
     let mut tgt_is_raw = false;
     for tgt_lifetime in target_lifetimes.iter().rev() {
@@ -167,40 +199,52 @@ pub fn arg_return_mut ( source_type:        &ShortLivedType,
         tgt_is_raw = tgt_lifetime.is_raw;
         break;
     }
-    let mut tgt_bounding_lt: Option<LifetimeName> = None;
+    let mut tgt_bounding_lt: Vec<LifetimeName> = Vec::new();
     for tgt_lifetime in target_lifetimes.iter() {
         if tgt_lifetime.is_refcell { continue; }
-        if tgt_lifetime.name.is_some() {
-            tgt_bounding_lt = tgt_lifetime.name;
+        if tgt_lifetime.names.len() > 0 {
+            tgt_bounding_lt = tgt_lifetime.names.clone();
         }
     }
-    if !(src_is_raw && source_type.in_struct) { return (false, (None, None)); } // We want the source to be a raw pointer
-    if tgt_is_raw { return (false, (None, None)); } // We want the target to be a normal borrow
-    if tgt_bounding_lt.is_none() {
-        return (false, (None, None));
+    if !(src_is_raw && source_type.in_struct) { return (false, (Vec::new(), Vec::new())); } // We want the source to be a raw pointer
+    if tgt_is_raw { return (false, (Vec::new(), Vec::new())); } // We want the target to be a normal borrow
+    if tgt_bounding_lt.len() == 0 {
+        return (false, (Vec::new(), Vec::new()));
     }
-    if compare_lifetimes(&src_bounding_lt.unwrap(), &tgt_bounding_lt.unwrap()) {
-        return (false, (None, None));
+
+    for src_lt in src_bounding_lt.iter() {
+        let mut flag = false;
+        for tgt_lt in tgt_bounding_lt.iter() {
+            if compare_lifetimes(src_lt, tgt_lt) {
+                flag = true;
+                break;
+            }
+            else {
+                if lifetime_bounds.iter() // Source should outlive the target
+                    .any(|&(x, y)| compare_lifetimes(&x, &src_lt)
+                                && compare_lifetimes(&y, &tgt_lt))
+                { flag = true; break; }
+            }            
+        }
+        // This source lifetime is not compatible with any of the target lifetimes
+        if !flag {
+            return (true, (src_bounding_lt.clone(), tgt_bounding_lt.clone()));
+        }
     }
-    else {
-        if lifetime_bounds.iter() // Source should outlive the target
-            .any(|&(x, y)| compare_lifetimes(&x, &src_bounding_lt.unwrap())
-                        && compare_lifetimes(&y, &tgt_bounding_lt.unwrap()))
-        { return (false, (None, None)); }
-    }
-    (true, (src_bounding_lt, tgt_bounding_lt))
+    (false, (Vec::new(), Vec::new()))
 }
 
 pub fn arg_arg_outlives(source_type:   &ShortLivedType,
                         target_type:   &ShortLivedType,
                         lifetime_bounds:    &Vec<(LifetimeName, LifetimeName)>,
                         config:         YugaConfig,
-                    ) -> (bool, (Option<LifetimeName>, Option<LifetimeName>)) {
+                        debug:          bool,
+                    ) -> (bool, (Vec<LifetimeName>, Vec<LifetimeName>)) {
 
     let source_lifetimes = &source_type.lifetimes;
     let target_lifetimes = &target_type.lifetimes;
 
-    let mut src_bounding_lt: Option<LifetimeName> = None;
+    let mut src_bounding_lt: Vec<LifetimeName> = Vec::new();
     let mut first = true;
     let mut src_is_raw = false;
 
@@ -211,16 +255,16 @@ pub fn arg_arg_outlives(source_type:   &ShortLivedType,
         if first && src_lifetime.is_raw { src_is_raw = true; }
         first = false;
 
-        if src_lifetime.name.is_some() {
-            src_bounding_lt = src_lifetime.name;
+        if src_lifetime.names.len() > 0 {
+            src_bounding_lt = src_lifetime.names.clone();
             break;
         }
     }
-    if src_bounding_lt.is_none() || src_bounding_lt == Some(LifetimeName::Static) {
-        return (false, (None, None));
+    if src_bounding_lt.len() == 0 || src_bounding_lt.contains(&LifetimeName::Static) {
+        return (false, (Vec::new(), Vec::new()));
     }
 
-    let mut tgt_bounding_lt: Option<LifetimeName> = None;
+    let mut tgt_bounding_lt: Vec<LifetimeName> = Vec::new();
 
     let mut check_mut = true;
     let mut viable = false;
@@ -236,7 +280,7 @@ pub fn arg_arg_outlives(source_type:   &ShortLivedType,
                 continue;
             }
             else {
-                tgt_bounding_lt = tgt_lifetime.name;
+                tgt_bounding_lt = tgt_lifetime.names.clone();
                 tgt_is_raw = tgt_lifetime.is_raw;
                 first = false;
                 continue;
@@ -260,23 +304,33 @@ pub fn arg_arg_outlives(source_type:   &ShortLivedType,
         }
         viable = true;
     }
-    if ! viable { return (false, (None, None)); }
+    if ! viable { return (false, (Vec::new(), Vec::new())); }
 
-    if (! src_is_raw) && (! tgt_is_raw) { return (false, (None, None)); }
-    if (src_is_raw && (! source_type.in_struct)) || (tgt_is_raw && (! target_type.in_struct)) { return (false, (None, None)); }
+    if (! src_is_raw) && (! tgt_is_raw) { return (false, (Vec::new(), Vec::new())); }
+    if (src_is_raw && (! source_type.in_struct)) || (tgt_is_raw && (! target_type.in_struct)) { return (false, (Vec::new(), Vec::new())); }
 
-    if tgt_bounding_lt.is_none() || tgt_bounding_lt == Some(LifetimeName::Static) {
+    if tgt_bounding_lt.len() == 0 || tgt_bounding_lt.contains(&LifetimeName::Static) {
         return (true, (src_bounding_lt, tgt_bounding_lt));
     }
     
-    if compare_lifetimes(&src_bounding_lt.unwrap(), &tgt_bounding_lt.unwrap()) {
-        return (false, (None, None));
+    for src_lt in src_bounding_lt.iter() {
+        let mut flag = false;
+        for tgt_lt in tgt_bounding_lt.iter() {
+            if compare_lifetimes(src_lt, tgt_lt) {
+                flag = true;
+                break;
+            }
+            else {
+                if lifetime_bounds.iter() // Source should outlive the target
+                    .any(|&(x, y)| compare_lifetimes(&x, &src_lt)
+                                && compare_lifetimes(&y, &tgt_lt))
+                { flag = true; break; }
+            }            
+        }
+        // This source lifetime is not compatible with any of the target lifetimes
+        if !flag {
+            return (true, (Vec::from([*src_lt]), tgt_bounding_lt.clone()));
+        }
     }
-    else {
-        if lifetime_bounds.iter() // Source should outlive the target
-            .any(|&(x, y)| compare_lifetimes(&x, &src_bounding_lt.unwrap())
-                        && compare_lifetimes(&y, &tgt_bounding_lt.unwrap()))
-        { return (false, (None, None)); }
-    }
-    (true, (src_bounding_lt, tgt_bounding_lt))
+    (false, (Vec::new(), Vec::new()))
 }

@@ -1,5 +1,5 @@
 use rustc_hir::{def_id::DefId, Ty, TyKind, Mutability};
-use rustc_hir::ParamName::{Plain};
+use rustc_hir::ParamName::Plain;
 use rustc_hir::LifetimeName;
 
 use rustc_middle::ty::TyCtxt;
@@ -51,7 +51,7 @@ pub fn get_trait_lifetime_bounds<'tcx>( def_id: &DefId,
 
 #[derive(Debug, Clone)]
 pub struct MyLifetime {
-	pub name: Option<LifetimeName>,
+	pub names: Vec<LifetimeName>,
 	pub is_mut: bool,
 	pub is_raw: bool,
 	pub is_refcell: bool,
@@ -110,7 +110,7 @@ pub fn get_sub_types_dbg<'tcx>(	ty: 			&'tcx Ty<'tcx>,
 
 			let sub_types = get_sub_types_dbg(&mut_ty.ty, trait_bounds, tcx, known_defids.clone(), defid_remap.clone(), lifetime_remap.clone(), debug);
 			let is_mut: bool = (mut_ty.mutbl == Mutability::Mut);
-			let this_lifetime = MyLifetime{	name: None,
+			let this_lifetime = MyLifetime{	names: Vec::new(),
 											is_mut: (mut_ty.mutbl == Mutability::Mut),
 											is_raw: true,
 											is_refcell: false,
@@ -130,7 +130,7 @@ pub fn get_sub_types_dbg<'tcx>(	ty: 			&'tcx Ty<'tcx>,
 			// This will do its own lifetime substitution so we don't need to substitute again!
 			let sub_types = get_sub_types_dbg(&sub_ty, trait_bounds, tcx, known_defids.clone(), defid_remap.clone(), lifetime_remap.clone(), debug);
 
-			let this_lifetime = MyLifetime{	name: Some(lifetime_name),
+			let this_lifetime = MyLifetime{	names: Vec::from([lifetime_name]),
 								is_mut: (*mutbl == Mutability::Mut),
 								is_raw: false,
 								is_refcell: false,
@@ -251,7 +251,7 @@ pub fn get_sub_types_dbg<'tcx>(	ty: 			&'tcx Ty<'tcx>,
 					    },
 					    rustc_hir::ParamName::Fresh
 					);
-					let this_lifetime = MyLifetime{	name: Some(artificial),
+					let this_lifetime = MyLifetime{	names: Vec::from([artificial]),
 										is_mut: false, // Could be true also... TODO
 										is_raw: false,
 										is_refcell: false,
@@ -327,39 +327,33 @@ pub fn get_sub_types_dbg<'tcx>(	ty: 			&'tcx Ty<'tcx>,
 		    		let sub_types = get_sub_types_dbg(ty_param, trait_bounds, tcx, known_defids.clone(), defid_remap.clone(), lifetime_remap.clone(), debug);
 
 		    		for sub_type in sub_types.iter() {
-		    			let mut temp = sub_type.clone();
-		    			temp.projection.insert(0 as usize, MyField(FieldInfo{field_num: 		0 as usize,
+		    			let mut temp_type = sub_type.clone();
+		    			temp_type.projection.insert(0 as usize, MyField(FieldInfo{field_num: 		0 as usize,
 																		 	 field_name: 		None,
 																		 	 type_span: 		None,
 																		 	 struct_decl_span: 	None,
 																		 	 struct_def_id: 	Some(*def_id) })); // Assume that this type is at index 0
 
 		    			if def_name == "RefCell" {
-							let ref_lifetime = MyLifetime{	name: 		None,
+							let ref_lifetime = MyLifetime{	names: Vec::new(),
 															is_mut: 	false,
 															is_raw: 	false,
 															is_refcell: true,
 														};
-							temp.lifetimes.insert(0 as usize, ref_lifetime);
+							temp_type.lifetimes.insert(0 as usize, ref_lifetime);
 						}
-						let mut new_types: Vec<ShortLivedType> = Vec::from([temp.clone()]);
 
 						if struct_lifetimes.len() != 0 {
-			    			for (i, lt) in temp.lifetimes.iter().enumerate() {
+			    			for (i, lt) in temp_type.lifetimes.iter().enumerate() {
 			    				if lt.is_refcell { continue; }
 			    				// Pick out the first non-refcell lifetime. Check if it's raw and has no existing lifetimes
-			    				if lt.is_raw && lt.name.is_none() {
-			    					new_types = struct_lifetimes.iter()
-															 	.map(|&struct_lt|
-																{let mut x = temp.clone();
-												 				 x.lifetimes[i].name = Some(struct_lt);
-												 				 x
-																}).collect();
+			    				if lt.is_raw && (lt.names.len() == 0) {
+									temp_type.lifetimes[i].names = struct_lifetimes.clone();
 			    				}
 								break;
 			    			}
 			    		}
-				    	types.append(&mut new_types);
+				    	types.push(temp_type);
 			    	}
 		    	}
 				if debug {
@@ -409,35 +403,27 @@ pub fn get_sub_types_dbg<'tcx>(	ty: 			&'tcx Ty<'tcx>,
 
 		    		for sub_type in sub_types.iter() {
 
-		    			let mut temp = sub_type.clone();
+		    			let mut temp_type = sub_type.clone();
 		    			let field_name: String = field.ident.name.as_str().to_string();
-		    			temp.projection.insert(0 as usize, MyField(FieldInfo{field_num: 		i as usize,
+		    			temp_type.projection.insert(0 as usize, MyField(FieldInfo{field_num: 		i as usize,
 																		 	 field_name: 		Some(field_name),
 																		 	 type_span: 		Some(field.ty.span),
 																		 	 struct_decl_span: 	Some(*struct_decl_span),
 																		 	 struct_def_id: 	Some(*def_id) }));
-		    			temp.in_struct = true;
-
-		    			let mut new_types: Vec<ShortLivedType> = Vec::from([temp.clone()]);
+		    			temp_type.in_struct = true;
 
 		    			if struct_lifetimes.len() != 0 {
-			    			for (i, lt) in temp.lifetimes.iter().enumerate() {
+			    			for (i, lt) in temp_type.lifetimes.iter().enumerate() {
 			    				if lt.is_refcell { continue; }
 			    				// Pick out the first non-refcell lifetime. Check if it's raw.
-			    				// If it has no existing lifetimes, replace it with the structure lifetime.
-			    				// If there are multiple structure lifetimes, create multiple subtypes. TODO - this isn't quite right
-			    				if lt.is_raw && lt.name.is_none() {
-			    					new_types = struct_lifetimes.iter()
-			    						    					.map(|&struct_lt|
-			    											  { let mut x = temp.clone();
-			    											    x.lifetimes[i].name = Some(struct_lt);
-			    											    x
-			    											  }).collect();
+			    				// If it has no existing lifetimes, replace it with the structure lifetimes.
+			    				if lt.is_raw && (lt.names.len() == 0) {
+									temp_type.lifetimes[i].names = struct_lifetimes.clone();
 			    				}
 								break;
 			    			}
 			    		}
-				    	types.append(&mut new_types);
+				    	types.push(temp_type);
 			    	}
 		    	}
 		    }
@@ -548,12 +534,12 @@ pub fn get_implicit_lifetime_bounds<'tcx>(	ty: 			&'tcx Ty<'tcx>,
 	for sub_type in sub_types.iter() {
 		for i in 0 .. sub_type.lifetimes.len() {
 			for j in (i+1) .. sub_type.lifetimes.len() {
-				if sub_type.lifetimes[i].name.is_some() && sub_type.lifetimes[j].name.is_some() {
-					all_bounds.push(
-						(sub_type.lifetimes[j].name.unwrap().clone(),
-						 sub_type.lifetimes[i].name.unwrap().clone()
-						)
-					);
+				if (sub_type.lifetimes[i].names.len() > 0) && (sub_type.lifetimes[j].names.len() > 0) {
+					for x in sub_type.lifetimes[j].names.iter() {
+						for y in sub_type.lifetimes[i].names.iter() {
+							all_bounds.push((*x, *y));
+						}
+					}
 				}
 			}
 		}

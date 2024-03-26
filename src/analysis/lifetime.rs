@@ -157,8 +157,14 @@ impl<'tcx> LifetimeChecker<'tcx> {
                         let source_field = get_first_field(&src_ty.projection);
                         let target_field = get_first_field(&tgt_ty.projection);
 
+                        let mut debug = false;                        
+                        if let Some(ref debug_fn) = self.config.debug_fn {
+                            if func.func_name.contains(debug_fn) {
+                                debug = true;
+                            }
+                        }
                         // First check for use-after-free violations
-                        let (violation, (src_bounding_lt, tgt_bounding_lt), (src_is_raw, tgt_is_raw)) = checks::arg_return_outlives(&src_ty, &tgt_ty, &bounds, &self.tcx, self.config.clone());
+                        let (violation, (src_bounding_lt, tgt_bounding_lt), (src_is_raw, tgt_is_raw)) = checks::arg_return_outlives(&src_ty, &tgt_ty, &bounds, &self.tcx, self.config.clone(), debug);
 
                         if violation {
                             let source_place: Option<Place> = get_mir_value_from_hir_param(&func.params[inp_num], &func.mir_body);
@@ -199,7 +205,13 @@ impl<'tcx> LifetimeChecker<'tcx> {
                             taint_analyzer.clear_taint();
                         }
 
-                        let (violation, (src_bounding_lt, tgt_bounding_lt)) = checks::arg_return_mut(&src_ty, &tgt_ty, &bounds, self.config.clone());
+                        let mut debug = false;                        
+                        if let Some(ref debug_fn) = self.config.debug_fn {
+                            if func.func_name.contains(debug_fn) {
+                                debug = true;
+                            }
+                        }
+                        let (violation, (src_bounding_lt, tgt_bounding_lt)) = checks::arg_return_mut(&src_ty, &tgt_ty, &bounds, self.config.clone(), debug);
 
                         if violation {
                             let source_place: Option<Place> = get_mir_value_from_hir_param(&func.params[inp_num], &func.mir_body);
@@ -280,7 +292,13 @@ impl<'tcx> LifetimeChecker<'tcx> {
                                 continue;
                             }
                         }
-                        let (violation, (src_bounding_lt, tgt_bounding_lt)) = checks::arg_arg_outlives(&src_ty, &tgt_ty, &bounds2, self.config.clone());
+                        let mut debug = false;                        
+                        if let Some(ref debug_fn) = self.config.debug_fn {
+                            if func.func_name.contains(debug_fn) {
+                                debug = true;
+                            }
+                        }
+                        let (violation, (src_bounding_lt, tgt_bounding_lt)) = checks::arg_arg_outlives(&src_ty, &tgt_ty, &bounds2, self.config.clone(), debug);
                         if violation {
 
                             let source_place: Option<Place> = get_mir_value_from_hir_param(&func.params[inp_num1], &func.mir_body);

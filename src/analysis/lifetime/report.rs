@@ -27,24 +27,28 @@ use comrak::{markdown_to_html, markdown_to_html_with_plugins, ComrakOptions, Com
 use comrak::plugins::syntect::SyntectAdapter;
 use std::fs;
 
-pub fn get_string_from_lifetime(lifetime: Option<LifetimeName>) -> String {
+pub fn get_string_from_lifetimes(lifetimes: Vec<LifetimeName>) -> String {
 
-    match lifetime {
-        Some(rustc_hir::LifetimeName::Param(_, Plain(ident))) => {
-            let ident_name = ident.as_str();
-            format!("outlives the lifetime corresponding to `{ident_name}`")
-        },
-        Some(rustc_hir::LifetimeName::Param(_, Fresh)) => {
-            format!("outlives the lifetime corresponding to `'_`")
-        },
-        Some(rustc_hir::LifetimeName::Static) => {
-            format!("lives for the entire lifetime of the running program (`'static`)")
-        },
-        None => {
-            format!("lives for the entire duration that it is owned")
-        },
-        _ => "".to_string()
+    if lifetimes.len() == 0 {
+        return "lives for the entire duration that it is owned".to_string()
     }
+    let mut lifetime_str = "outlives the lifetime corresponding to ".to_string();
+
+    for lt in lifetimes {
+        match lt {
+            rustc_hir::LifetimeName::Param(_, Plain(ident)) => {
+                lifetime_str.push_str(&format!("`{}`, ", ident.as_str()));
+            },
+            rustc_hir::LifetimeName::Param(_, Fresh) => {
+                lifetime_str.push_str("`'_`, ");
+            },
+            rustc_hir::LifetimeName::Static => {
+                lifetime_str = String::from("lives for the entire lifetime of the running program (`'static`)");
+            },
+            _ => {}
+        }
+    }
+    return lifetime_str;
 }
 
 pub fn generate_trace(ty: &ShortLivedType, top_level_id_name: String, top_level_type_span: Span, tcx: &TyCtxt) -> String {
@@ -109,8 +113,8 @@ pub fn arg_return_uaf_report<'tcx>( tcx: &TyCtxt<'tcx>,
                                     inp_num: usize,
                                     src_ty: &ShortLivedType,
                                     tgt_ty: &ShortLivedType,
-                                    src_bounding_lt: Option<LifetimeName>,
-                                    tgt_bounding_lt: Option<LifetimeName>
+                                    src_bounding_lt: Vec<LifetimeName>,
+                                    tgt_bounding_lt: Vec<LifetimeName>
                                 ) -> String
 {
     let mut human_report: String = String::new();
@@ -126,8 +130,8 @@ pub fn arg_return_uaf_report<'tcx>( tcx: &TyCtxt<'tcx>,
     let src_type_name = format_span(*tcx, &src_ty.type_span);
     let tgt_type_name = format_span(*tcx, &tgt_ty.type_span);
 
-    let src_lifetime_str = get_string_from_lifetime(src_bounding_lt);
-    let tgt_lifetime_str = get_string_from_lifetime(tgt_bounding_lt);
+    let src_lifetime_str = get_string_from_lifetimes(src_bounding_lt);
+    let tgt_lifetime_str = get_string_from_lifetimes(tgt_bounding_lt);
 
     human_report.push_str(&format!("`{src_name}` is of type `{src_type_name}` and {src_lifetime_str}\n\n"));
     human_report.push_str(&format!("It is (probably) returned as `{tgt_name}` which is of type `{tgt_type_name}`, and {tgt_lifetime_str}. Here, `ret` denotes the value returned by the function.\n\n"));
@@ -166,8 +170,8 @@ pub fn arg_return_mut_report<'tcx>( tcx: &TyCtxt<'tcx>,
                                     inp_num: usize,
                                     src_ty: &ShortLivedType,
                                     tgt_ty: &ShortLivedType,
-                                    src_bounding_lt: Option<LifetimeName>,
-                                    tgt_bounding_lt: Option<LifetimeName>
+                                    src_bounding_lt: Vec<LifetimeName>,
+                                    tgt_bounding_lt: Vec<LifetimeName>
                                 ) -> String
 {
     let mut human_report: String = String::new();
@@ -183,7 +187,7 @@ pub fn arg_return_mut_report<'tcx>( tcx: &TyCtxt<'tcx>,
     let src_type_name = format_span(*tcx, &src_ty.type_span);
     let tgt_type_name = format_span(*tcx, &tgt_ty.type_span);
 
-    let src_lifetime_str = match src_bounding_lt {
+    let src_lifetime_str = match src_bounding_lt.first() {
         Some(rustc_hir::LifetimeName::Param(_, Plain(ident))) => {
             format!("`{}`", ident.as_str())
         },
@@ -191,7 +195,7 @@ pub fn arg_return_mut_report<'tcx>( tcx: &TyCtxt<'tcx>,
         Some(rustc_hir::LifetimeName::Static) => "`'static`".to_string(),
         _ => "".to_string(),
     };
-    let tgt_lifetime_str = get_string_from_lifetime(tgt_bounding_lt);
+    let tgt_lifetime_str = get_string_from_lifetimes(tgt_bounding_lt);
 
     human_report.push_str(&format!("`{src_name}` is of type `{src_type_name}`, and it is behind a `&mut` or `*mut`.\n\n"));
     human_report.push_str(&format!("During the lifetime corresponding to {src_lifetime_str}, there cannot be another mutable borrow (exclusive mutability).\n\n"));
@@ -231,8 +235,8 @@ pub fn arg_arg_uaf_report<'tcx>(tcx: &TyCtxt<'tcx>,
                                 inp_num2: usize,
                                 src_ty: &ShortLivedType,
                                 tgt_ty: &ShortLivedType,
-                                src_bounding_lt: Option<LifetimeName>,
-                                tgt_bounding_lt: Option<LifetimeName>
+                                src_bounding_lt: Vec<LifetimeName>,
+                                tgt_bounding_lt: Vec<LifetimeName>
                             ) -> String
 {
     let mut human_report: String = String::new();
@@ -249,8 +253,8 @@ pub fn arg_arg_uaf_report<'tcx>(tcx: &TyCtxt<'tcx>,
     let src_type_name = format_span(*tcx, &src_ty.type_span);
     let tgt_type_name = format_span(*tcx, &tgt_ty.type_span);
 
-    let src_lifetime_str = get_string_from_lifetime(src_bounding_lt);
-    let tgt_lifetime_str = get_string_from_lifetime(tgt_bounding_lt);
+    let src_lifetime_str = get_string_from_lifetimes(src_bounding_lt);
+    let tgt_lifetime_str = get_string_from_lifetimes(tgt_bounding_lt);
 
     human_report.push_str(&format!("`{src_name}` is of type `{src_type_name}` and {src_lifetime_str}\n\n"));
     human_report.push_str(&format!("It is (probably) assigned to `{tgt_name}` which is of type `{tgt_type_name}`, and {tgt_lifetime_str}\n\n"));
