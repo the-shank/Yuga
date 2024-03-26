@@ -2,6 +2,8 @@
 
 **[NEW]** Try out our (WIP) [web demo](https://yuga-rust-1ec69edea65b.herokuapp.com) of Yuga!
 
+**[INFO]** We have put together a [synthetically created database](https://github.com/vnrst/rust-lifetime-bugs) of 27 lifetime annotation bugs, based on patterns obtained from RustSec vulnerability reports.
+
 Yuga is a tool to detect lifetime annotation bugs in Rust [[ArXiv](https://arxiv.org/pdf/2310.08507.pdf)]. It is adapted from a fork of [Rudra](https://github.com/sslab-gatech/Rudra).
 
 To setup the code, clone the repository, `cd` into it, and run the following command (tested on Mac and Ubuntu):
