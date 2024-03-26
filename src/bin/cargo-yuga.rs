@@ -121,6 +121,7 @@ fn version_info() -> VersionMeta {
 
 fn cargo_package() -> cargo_metadata::Package {
     // We need to get the manifest, and then the metadata, to enumerate targets.
+    println!("Getting metadata");
     let manifest_path =
         get_arg_flag_value("--manifest-path").map(|m| Path::new(&m).canonicalize().unwrap());
 
@@ -132,6 +133,7 @@ fn cargo_package() -> cargo_metadata::Package {
         Ok(metadata) => metadata,
         Err(e) => show_error(format!("Could not obtain Cargo metadata\n{}", e)),
     };
+    println!("Got metadata");
 
     let current_dir = std::env::current_dir();
 
@@ -140,6 +142,7 @@ fn cargo_package() -> cargo_metadata::Package {
         .iter()
         .position(|package| {
             let package_manifest_path = Path::new(&package.manifest_path);
+            
             if let Some(manifest_path) = &manifest_path {
                 package_manifest_path == manifest_path
             } else {
@@ -298,6 +301,8 @@ fn in_cargo_yuga() {
     // Some basic sanity checks
     test_sysroot_consistency();
 
+    println!("Tested sysroot consistency");
+
     // Now run the command.
     let package = cargo_package();
     let mut targets: Vec<_> = package.targets.into_iter().collect();
@@ -309,6 +314,8 @@ fn in_cargo_yuga() {
         // Skip `cargo yuga`
         let mut args = std::env::args().skip(2);
         let kind = TargetKind::from(&target);
+
+        println!("Target name: {}", &target.name);
 
         // Now we run `cargo check $FLAGS $ARGS`, giving the user the
         // change to add additional arguments. `FLAGS` is set to identify
@@ -325,7 +332,9 @@ fn in_cargo_yuga() {
         match kind {
             TargetKind::Bin => {
                 // Analyze all the binaries.
-                cmd.arg("--bin").arg(&target.name);
+                // Temporarily commented out. Analyzing only libraries for now.
+                warn!("Skipping binary target {}", &target.name);
+                // cmd.arg("--bin").arg(&target.name);
             }
             TargetKind::Library => {
                 // There can be only one lib in a crate.

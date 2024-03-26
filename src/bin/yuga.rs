@@ -45,7 +45,7 @@ impl rustc_driver::Callbacks for YugaCompilerCalls {
 
         progress_info!("Yuga started");
         queries.global_ctxt().unwrap().peek_mut().enter(|tcx| {
-            analyze(tcx, self.config);
+            analyze(tcx, self.config.clone());
         });
         progress_info!("Yuga finished");
 
@@ -94,16 +94,41 @@ fn parse_config() -> (YugaConfig, Vec<String>) {
     let mut config = YugaConfig::default();
 
     let mut rustc_args = vec![];
-    for arg in std::env::args() {
-        match arg.as_str() {
-            "-Zyuga-enable-lifetime" => config.lifetime_enabled = true,
+    let mut args = std::env::args();
+
+    while let Some(arg) = args.next() {
+        let orig_arg = arg.clone();
+        let (key, value) = match arg.contains('=') {
+            true => {
+                let str_vec: Vec<&str> = arg.split('=').collect();
+                (String::from(str_vec[0]), Some(String::from(str_vec[1])))
+            },
+            false => {
+                (arg, None)
+            }
+        };
+        match &key[..] {
             "-v" => config.verbosity = Verbosity::Verbose,
             "-vv" => config.verbosity = Verbosity::Trace,
             "-Zsensitivity-high" => config.report_level = ReportLevel::Error,
             "-Zsensitivity-med" => config.report_level = ReportLevel::Warning,
             "-Zsensitivity-low" => config.report_level = ReportLevel::Info,
+            "-Zgeneric-matches-all" => config.generic_matches_all = true,
+            "-Zno-wildcard-field" => config.wildcard_field = false,
+            "-Zno-pub-only" => config.pub_only = false,
+            "-Zno-shallow-filter" => config.shallow_filter = false,
+            "-Zno-alias-analysis" => config.alias_analysis = false,
+            "-Zno-mir" => config.no_mir = true,
+            "-Zfilter-by-drop-impl" => config.filter_by_drop_impl = true,
+            // Take the name of the function to debug as an argument and assign it to config.debug_fn
+            "-Zdebug-fn" => {
+                config.debug_fn = Some(value.expect("Missing argument for -Zdebug-fn"));
+            },
+            "-Zreport-dir" => {
+                config.report_dir = value.expect("Missing argument for -Zreport-dir");
+            },
             _ => {
-                rustc_args.push(arg);
+                rustc_args.push(orig_arg);
             }
         }
     }
