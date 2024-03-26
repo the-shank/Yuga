@@ -2,14 +2,13 @@
 
 **[NEW]** Try out our (WIP) [web demo](https://yuga-rust-1ec69edea65b.herokuapp.com) of Yuga!
 
-Yuga is a tool to detect lifetime annotation bugs in Rust [[ArXiv](https://arxiv.org/pdf/2310.08507.pdf)]. It is adapted from a fork of [Rudra](https://github.com/sslab-gatech/Yuga).
+Yuga is a tool to detect lifetime annotation bugs in Rust [[ArXiv](https://arxiv.org/pdf/2310.08507.pdf)]. It is adapted from a fork of [Rudra](https://github.com/sslab-gatech/Rudra).
 
-To setup the code, clone the repository, `cd` into it, and run the following commands (tested on Mac and Ubuntu):
+To setup the code, clone the repository, `cd` into it, and run the following command (tested on Mac and Ubuntu):
 ```
-./setup_yuga_runner_home ./yuga_home
 ./install-debug.sh
 ```
-If you face errors running the above commands, please refer to the instructions in the main Yuga repository for installing Yuga in debug mode.
+If you face errors, please refer to the instructions in the main Rudra repository for installing Rudra in debug mode.
 
 Our tool can now be run using the `cargo-yuga` subcommand. For any Rust package that we want to analyze, run the following command from within the package folder:
 ```
