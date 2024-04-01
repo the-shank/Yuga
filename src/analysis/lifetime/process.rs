@@ -535,7 +535,7 @@ pub fn get_implicit_lifetime_bounds<'tcx>(	ty: 			&'tcx Ty<'tcx>,
 		for i in 0 .. sub_type.lifetimes.len() {
 			for j in (i+1) .. sub_type.lifetimes.len() {
 				if (sub_type.lifetimes[i].names.len() > 0) && (sub_type.lifetimes[j].names.len() > 0) {
-					for x in sub_type.lifetimes[j].names.iter() {
+					for x in sub_type.lifetimes[j].names.iter() { // Notice that it's j and then i
 						for y in sub_type.lifetimes[i].names.iter() {
 							all_bounds.push((*x, *y));
 						}

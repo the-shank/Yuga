@@ -115,7 +115,7 @@ pub fn arg_return_uaf_report<'tcx>( tcx: &TyCtxt<'tcx>,
                                     tgt_ty: &ShortLivedType,
                                     src_bounding_lt: Vec<LifetimeName>,
                                     tgt_bounding_lt: Vec<LifetimeName>
-                                ) -> String
+                                ) -> (String, String)
 {
     let mut human_report: String = String::new();
 
@@ -161,8 +161,10 @@ pub fn arg_return_uaf_report<'tcx>( tcx: &TyCtxt<'tcx>,
     let mut plugins = ComrakPlugins::default();
 
     plugins.render.codefence_syntax_highlighter = Some(&adapter);
+    let html_report = markdown_to_html_with_plugins(&human_report, &options, &plugins);
+    let markdown_report = human_report.clone();
 
-    markdown_to_html_with_plugins(&human_report, &options, &plugins)
+    (markdown_report, html_report)
 }
 
 pub fn arg_return_mut_report<'tcx>( tcx: &TyCtxt<'tcx>,
@@ -172,7 +174,7 @@ pub fn arg_return_mut_report<'tcx>( tcx: &TyCtxt<'tcx>,
                                     tgt_ty: &ShortLivedType,
                                     src_bounding_lt: Vec<LifetimeName>,
                                     tgt_bounding_lt: Vec<LifetimeName>
-                                ) -> String
+                                ) -> (String, String)
 {
     let mut human_report: String = String::new();
 
@@ -226,7 +228,10 @@ pub fn arg_return_mut_report<'tcx>( tcx: &TyCtxt<'tcx>,
 
     plugins.render.codefence_syntax_highlighter = Some(&adapter);
 
-    markdown_to_html_with_plugins(&human_report, &options, &plugins)
+    let html_report = markdown_to_html_with_plugins(&human_report, &options, &plugins);
+    let markdown_report = human_report.clone();
+
+    (markdown_report, html_report)
 }
 
 pub fn arg_arg_uaf_report<'tcx>(tcx: &TyCtxt<'tcx>,
@@ -237,7 +242,7 @@ pub fn arg_arg_uaf_report<'tcx>(tcx: &TyCtxt<'tcx>,
                                 tgt_ty: &ShortLivedType,
                                 src_bounding_lt: Vec<LifetimeName>,
                                 tgt_bounding_lt: Vec<LifetimeName>
-                            ) -> String
+                            ) -> (String, String)
 {
     let mut human_report: String = String::new();
 
@@ -285,7 +290,10 @@ pub fn arg_arg_uaf_report<'tcx>(tcx: &TyCtxt<'tcx>,
 
     plugins.render.codefence_syntax_highlighter = Some(&adapter);
 
-    markdown_to_html_with_plugins(&human_report, &options, &plugins)
+    let html_report = markdown_to_html_with_plugins(&human_report, &options, &plugins);
+    let markdown_report = human_report.clone();
+
+    (markdown_report, html_report)
 }
 
 pub fn generate_llm_query<'tcx>(tcx: &TyCtxt<'tcx>,

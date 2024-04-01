@@ -61,6 +61,7 @@ use serde_json::{Result, Value};
 
 pub struct Report {
     html: String,
+    markdown: String,
     func_name: String,
     error_type: String,
     queries: Vec<String>,
@@ -188,7 +189,7 @@ impl<'tcx> LifetimeChecker<'tcx> {
                                 dataflow_detected = taint_analyzer.check_taint(&Local::from_usize(0), target_field);
                             }
                             if dataflow_detected {
-                                let html: String = arg_return_uaf_report(self.tcx, &func, inp_num, src_ty, tgt_ty, src_bounding_lt, tgt_bounding_lt);
+                                let (html, markdown) = arg_return_uaf_report(self.tcx, &func, inp_num, src_ty, tgt_ty, src_bounding_lt, tgt_bounding_lt);
                                 let mut queries: Vec<String> = Vec::new();
                                 if src_ty.in_struct {
                                     let arg_name = get_name_from_param(&func.params[inp_num]).unwrap();
@@ -198,6 +199,7 @@ impl<'tcx> LifetimeChecker<'tcx> {
                                 //     queries.push(generate_llm_query(self.tcx, "ret".to_string(), ret_type.span, tgt_ty));
                                 // }
                                 return Some(Report{html,
+                                                   markdown,
                                                    func_name:   String::new(),
                                                    error_type:  "uaf".to_string(),
                                                    queries });
@@ -235,9 +237,10 @@ impl<'tcx> LifetimeChecker<'tcx> {
                                 dataflow_detected = taint_analyzer.check_taint(&Local::from_usize(0), target_field);
                             }
                             if dataflow_detected {
-                                let html: String = arg_return_mut_report(self.tcx, &func, inp_num, src_ty, tgt_ty, src_bounding_lt, tgt_bounding_lt);
+                                let (html, markdown) = arg_return_mut_report(self.tcx, &func, inp_num, src_ty, tgt_ty, src_bounding_lt, tgt_bounding_lt);
 
                                 return Some(Report{html,
+                                                   markdown,
                                                    func_name:   String::new(),
                                                    error_type:  "uaf".to_string(),
                                                    queries:     Vec::new() });
@@ -330,7 +333,7 @@ impl<'tcx> LifetimeChecker<'tcx> {
                             }
 
                             if dataflow_detected {
-                                let html: String = arg_arg_uaf_report(self.tcx, &func, inp_num1, inp_num2, src_ty, tgt_ty, src_bounding_lt, tgt_bounding_lt);
+                                let (html, markdown) = arg_arg_uaf_report(self.tcx, &func, inp_num1, inp_num2, src_ty, tgt_ty, src_bounding_lt, tgt_bounding_lt);
                                 let mut queries: Vec<String> = Vec::new();
                                 let arg_name1 = get_name_from_param(&func.params[inp_num1]).unwrap();
                                 queries.push(generate_llm_query(self.tcx, arg_name1.to_string(), get_actual_type(inp1, self.tcx).span, src_ty));
@@ -338,6 +341,7 @@ impl<'tcx> LifetimeChecker<'tcx> {
                                 //     queries.push(generate_llm_query(self.tcx, "ret".to_string(), ret_type.span, tgt_ty));
                                 // }
                                 return Some(Report{html,
+                                                   markdown,
                                                    func_name:   String::new(),
                                                    error_type:  "uaf".to_string(),
                                                    queries });
@@ -421,11 +425,16 @@ impl<'tcx> LifetimeChecker<'tcx> {
             }
 
             fs::create_dir(&folder_name);
-            let report_filename: String = folder_name.clone() + "/report.html";
+            let html_report_filename: String     = folder_name.clone() + "/report.html";
+            let markdown_report_filename: String = folder_name.clone() + "/report.md";
 
-            match fs::write(&report_filename, &report.html) {
-                Ok(_) => progress_info!("Wrote report to {}", report_filename),
-                Err(_) => progress_warn!("Could not write report to {}", report_filename)
+            match fs::write(&html_report_filename, &report.html) {
+                Ok(_) => progress_info!("Wrote report to {}", html_report_filename),
+                Err(_) => progress_warn!("Could not write report to {}", html_report_filename)
+            }
+            match fs::write(&markdown_report_filename, &report.markdown) {
+                Ok(_) => progress_info!("Wrote report to {}", markdown_report_filename),
+                Err(_) => progress_warn!("Could not write report to {}", markdown_report_filename)
             }
 
             for (i, query) in report.queries.iter().enumerate() {
