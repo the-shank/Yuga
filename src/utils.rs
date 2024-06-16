@@ -1,8 +1,8 @@
 use std::io::Write;
 use std::rc::Rc;
 
+use rustc_middle::mir::write_mir_pretty;
 use rustc_middle::ty::{Instance, InstanceDef, TyCtxt};
-use rustc_middle::mir::{write_mir_pretty};
 use rustc_span::{CharPos, Span};
 
 use termcolor::{Buffer, Color, ColorSpec, WriteColor};
@@ -245,10 +245,7 @@ pub fn format_span_with_diag<'tcx>(tcx: TyCtxt<'tcx>, span: &Span) -> String {
 
 pub fn format_span<'tcx>(tcx: TyCtxt<'tcx>, span: &Span) -> String {
     let source_map = tcx.sess.source_map();
-    format!(
-        "{}",
-        source_map.span_to_snippet(span.clone()).unwrap()
-    )
+    format!("{}", source_map.span_to_snippet(span.clone()).unwrap())
 }
 
 pub fn print_span_to_file<'tcx>(tcx: TyCtxt<'tcx>, span: &Span, output_name: &str) {

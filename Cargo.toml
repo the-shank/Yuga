@@ -7,6 +7,8 @@ edition = "2021"
 exclude = ["samples"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[package.metadata.rust-analyzer]
+rustc_private = true
 
 [lib]
 test = true

@@ -92,10 +92,9 @@ impl Report {
         let span = hir_map.span(item_hir_id);
 
         let source_map = tcx.sess.source_map();
-        let source =
-            source_map
-                .span_to_snippet(span)
-                .unwrap_or_else(|e| format!("unable to get source: {:?}", e));
+        let source = source_map
+            .span_to_snippet(span)
+            .unwrap_or_else(|e| format!("unable to get source: {:?}", e));
 
         let location = source_map.span_to_diagnostic_string(span);
 

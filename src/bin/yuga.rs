@@ -1,4 +1,3 @@
-#![feature(backtrace)]
 #![feature(rustc_private)]
 
 extern crate rustc_driver;
@@ -44,12 +43,14 @@ impl rustc_driver::Callbacks for YugaCompilerCalls {
         debug!("Crate name: {}", queries.crate_name().unwrap().peek_mut());
 
         progress_info!("Yuga started");
+        // QUERY: shank: not sure why they use 'peek_mut()' here...
         queries.global_ctxt().unwrap().peek_mut().enter(|tcx| {
             analyze(tcx, self.config.clone());
         });
         progress_info!("Yuga finished");
 
         compiler.session().abort_if_errors();
+        // QUERY: shank: wont this stop the build-scripts from building in the first place??
         Compilation::Stop
     }
 }
@@ -102,10 +103,8 @@ fn parse_config() -> (YugaConfig, Vec<String>) {
             true => {
                 let str_vec: Vec<&str> = arg.split('=').collect();
                 (String::from(str_vec[0]), Some(String::from(str_vec[1])))
-            },
-            false => {
-                (arg, None)
             }
+            false => (arg, None),
         };
         match &key[..] {
             "-v" => config.verbosity = Verbosity::Verbose,
@@ -123,10 +122,10 @@ fn parse_config() -> (YugaConfig, Vec<String>) {
             // Take the name of the function to debug as an argument and assign it to config.debug_fn
             "-Zdebug-fn" => {
                 config.debug_fn = Some(value.expect("Missing argument for -Zdebug-fn"));
-            },
+            }
             "-Zreport-dir" => {
                 config.report_dir = value.expect("Missing argument for -Zreport-dir");
-            },
+            }
             _ => {
                 rustc_args.push(orig_arg);
             }

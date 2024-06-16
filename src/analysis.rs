@@ -58,7 +58,7 @@ pub enum AnalysisErrorKind {
 
 #[derive(Debug, Copy, Clone)]
 pub enum AnalysisKind {
-    LifetimeChecker
+    LifetimeChecker,
 }
 
 trait IntoReportLevel {
@@ -68,7 +68,7 @@ trait IntoReportLevel {
 impl Into<Cow<'static, str>> for AnalysisKind {
     fn into(self) -> Cow<'static, str> {
         match &self {
-            AnalysisKind::LifetimeChecker => "LifetimeChecker".into()
+            AnalysisKind::LifetimeChecker => "LifetimeChecker".into(),
         }
     }
 }

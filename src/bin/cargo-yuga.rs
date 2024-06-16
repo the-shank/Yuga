@@ -1,5 +1,3 @@
-#![feature(backtrace)]
-
 ///! This implementation is based on `cargo-miri`
 ///! https://github.com/rust-lang/miri/blob/master/src/bin/cargo-miri.rs
 #[macro_use]
@@ -142,7 +140,7 @@ fn cargo_package() -> cargo_metadata::Package {
         .iter()
         .position(|package| {
             let package_manifest_path = Path::new(&package.manifest_path);
-            
+
             if let Some(manifest_path) = &manifest_path {
                 package_manifest_path == manifest_path
             } else {
@@ -250,9 +248,7 @@ fn main() {
         // dependencies get dispatched to `rustc`, the final test/binary to `yuga`.
         inside_cargo_rustc();
     } else {
-        show_error(
-            "`cargo-yuga` must be called with either `yuga` or `rustc` as first argument.",
-        );
+        show_error("`cargo-yuga` must be called with either `yuga` or `rustc` as first argument.");
     }
 }
 
