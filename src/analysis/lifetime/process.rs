@@ -82,6 +82,7 @@ pub fn get_sub_types<'tcx>(
     trait_bounds: &HashMap<DefId, rustc_hir::GenericBounds<'tcx>>,
     tcx: &'tcx TyCtxt<'tcx>,
 ) -> Vec<ShortLivedType> {
+    // shank: resume-here
     get_sub_types_dbg(
         ty,
         trait_bounds,

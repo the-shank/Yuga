@@ -73,7 +73,6 @@ impl<'tcx, 'a> Iterator for FnIter<'tcx, 'a> {
                     return self.next();
                 }
 
-                // shank: resume-here
                 let params = hir_map.body(*body_id).params;
                 let body_span = hir_map.body(*body_id).value.span;
                 let func_name = format!("{}", item.ident.name.as_str());
@@ -107,9 +106,11 @@ impl<'tcx, 'a> Iterator for FnIter<'tcx, 'a> {
                 let impl_item = &this_impl.items[self.impl_ind];
                 self.impl_ind += 1;
 
+                // shank: I dont fully understand this code, but skipping it for now..
                 if let Some(rustc_hir::Node::ImplItem(rustc_hir::ImplItem {
                     kind: rustc_hir::ImplItemKind::Fn(fn_sig, body_id),
                     generics,
+                    // QUERY: shank: wont this really pattern match to 'span' and not 'vis_span'??
                     vis_span,
                     ..
                 })) = hir_map.find(impl_item.id.hir_id())
