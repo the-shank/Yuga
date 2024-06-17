@@ -113,6 +113,10 @@ where
 }
 
 pub fn analyze<'tcx>(tcx: TyCtxt<'tcx>, config: YugaConfig) {
+    // QUERY: since this fn anyways completes the analysis before the `after_analysis` callback
+    // completes, why do they have to use this workaround for tcx?
+    // I think they could have stored tcx directly, and it would have been fine.
+    //
     // workaround to mimic arena lifetime
     let tcx = &*Box::leak(Box::new(tcx));
 

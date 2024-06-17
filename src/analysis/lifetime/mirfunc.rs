@@ -11,6 +11,9 @@ use rustc_span::Span;
 use rustc_middle::mir::Body;
 use std::collections::HashMap;
 
+/// TODO: shank: what does this represent?
+///
+/// QUERY: doesn't FnSig have the same lifetime as tcx?
 pub struct MirFunc<'tcx, 'a> {
     pub fn_sig: &'a FnSig<'tcx>,
     pub body_span: Span,

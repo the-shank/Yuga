@@ -15,11 +15,16 @@ use std::collections::HashMap;
 pub struct FnIter<'tcx, 'a> {
     items: Vec<&'a Item<'tcx>>,
     tcx: &'a TyCtxt<'tcx>,
+    /// shank: the index for the Fn,Impl vec.
     ind: usize,
+    /// shank: an Impl can have multiple functions, so this keeps track of which fn the iterator
+    /// would yield next
     impl_ind: usize,
     config: YugaConfig,
 }
 
+/// shank: this iterates over *all* the top-level Fn and Impls.
+/// The 'item' that this iterator yields is a `MirFunc`.
 pub fn fn_iter<'a, 'tcx>(tcx: &'a TyCtxt<'tcx>, config: YugaConfig) -> FnIter<'tcx, 'a> {
     let hir_map = tcx.hir();
     let mut items: Vec<&rustc_hir::Item> = Vec::new();
@@ -68,6 +73,7 @@ impl<'tcx, 'a> Iterator for FnIter<'tcx, 'a> {
                     return self.next();
                 }
 
+                // shank: resume-here
                 let params = hir_map.body(*body_id).params;
                 let body_span = hir_map.body(*body_id).value.span;
                 let func_name = format!("{}", item.ident.name.as_str());
